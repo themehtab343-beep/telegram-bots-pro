@@ -90,6 +90,7 @@ def build_bot_app(token, bot_num):
 
                 reply_markup = InlineKeyboardMarkup.de_json(reply_markup_dict, context.bot) if reply_markup_dict else None
 
+                # copy_message प्रीमियम स्टिकर, फोटो, वीडियो और हर तरह के मीडिया को सपोर्ट करता है
                 sent_msg = await context.bot.copy_message(
                     chat_id=user_id,
                     from_chat_id=from_chat_id,
@@ -104,7 +105,7 @@ def build_bot_app(token, bot_num):
                         disable_notification=False
                     )
             except Exception as e:
-                logging.error(f"Error copying msg to user {user_id}: {e}")
+                logging.error(f"Error copying msg to user {user_id} (Bot {bot_num}): {e}")
 
     async def handle_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = update.chat_member
@@ -115,7 +116,7 @@ def build_bot_app(token, bot_num):
             data = load_data(bot_num)
             leave_link = data.get("leave_link", "")
 
-msg_text = "⚠️ आप चैनल से हट गए हैं!\n\nपुनः जुड़ने के लिए नीचे दिए बटन पर क्लिक करें:"
+            msg_text = "⚠️ आप चैनल से हट गए हैं!\n\nपुनः जुड़ने के लिए नीचे दिए बटन पर क्लिक करें:"
             reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Rejoin Channel ↗️", url=leave_link)]]) if leave_link else None
 
             try:
@@ -140,18 +141,18 @@ msg_text = "⚠️ आप चैनल से हट गए हैं!\n\nपु
 
         admin_keyboard = [
             [
-                InlineKeyboardButton("📢 Send Broadcast", callback_data="btn_broadcast", style="primary"),
-                InlineKeyboardButton("🗑️ Clear All Messages", callback_data="btn_clear", style="danger")
+                InlineKeyboardButton("📢 Send Broadcast", callback_data="btn_broadcast"),
+                InlineKeyboardButton("🗑️ Clear All Messages", callback_data="btn_clear")
             ],
             [
-                InlineKeyboardButton("➕ Save New Messages", callback_data="btn_start_saving", style="success")
+                InlineKeyboardButton("➕ Save New Messages", callback_data="btn_start_saving")
             ],
             [
-                InlineKeyboardButton("➕ Add Admin", callback_data="btn_add_admin", style="primary"),
-                InlineKeyboardButton("➖ Remove Admin", callback_data="btn_rem_admin", style="danger")
+                InlineKeyboardButton("➕ Add Admin", callback_data="btn_add_admin"),
+                InlineKeyboardButton("➖ Remove Admin", callback_data="btn_rem_admin")
             ],
             [
-                InlineKeyboardButton("🔗 Set Leave Link", callback_data="btn_set_leave", style="primary")
+                InlineKeyboardButton("🔗 Set Leave Link", callback_data="btn_set_leave")
             ]
         ]
 
@@ -172,6 +173,7 @@ msg_text = "⚠️ आप चैनल से हट गए हैं!\n\nपु
             data["saved_messages"] = []
             save_data(bot_num, data)
             await query.answer("🗑️ All saved messages deleted!", show_alert=True)
+            await query.message.edit_text("🗑️ All saved messages have been cleared.")
 
         elif cb_data == "btn_start_saving":
             context.user_data["action"] = "saving_messages"
@@ -179,7 +181,7 @@ msg_text = "⚠️ आप चैनल से हट गए हैं!\n\nपु
             
             done_keyboard = ReplyKeyboardMarkup([["✅ DONE"]], resize_keyboard=True)
             await query.message.reply_text(
-                "📥 <b>Save Mode Active!</b>\n\nअब आप जो-जो मैसेज सेव करना चाहते हैं (फोटो, वीडियो, टेक्स्ट या बटन्स वाले मैसेज), बारी-बारी से भेजें।\nसारे मैसेज भेजने के बाद नीचे दिए <b>✅ DONE</b> बटन पर क्लिक करें।",
+                "📥 <b>Save Mode Active!</b>\n\nअब आप जो-जो मैसेज सेव करना चाहते हैं (टेक्स्ट, फोटो, वीडियो, प्रीमियम स्टीकर या बटन्स वाले मैसेज), बारी-बारी से भेजें।\nसारे मैसेज भेजने के बाद नीचे दिए <b>✅ DONE</b> बटन पर क्लिक करें।",
                 parse_mode="HTML",
                 reply_markup=done_keyboard
             )
@@ -205,7 +207,7 @@ msg_text = "⚠️ आप चैनल से हट गए हैं!\n\nपु
             await query.message.reply_text("🔗 चैनल का नया Rejoin Link भेजें:")
             await query.answer()
 
-async def message_collector_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def message_collector_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         data = load_data(bot_num)
         if user_id not in data["admins"]:
@@ -237,7 +239,6 @@ async def message_collector_handler(update: Update, context: ContextTypes.DEFAUL
                 return
 
             msg = update.message
-            
             reply_markup_dict = msg.reply_markup.to_dict() if msg.reply_markup else None
 
             msg_ref = {
@@ -287,18 +288,19 @@ async def message_collector_handler(update: Update, context: ContextTypes.DEFAUL
 
         elif action == "wait_broadcast":
             context.user_data["action"] = None
+            broadcast_msg = update.message
             await update.message.reply_text("🚀 Broadcasting started...")
             success = 0
             failed = 0
             for u in data["users"]:
                 try:
-                    await update.message.copy(chat_id=u)
+                    await broadcast_msg.copy(chat_id=u)
                     success += 1
                 except Exception:
                     failed += 1
             await update.message.reply_text(f"✅ Broadcast Complete!\n\nSuccess: {success}\nFailed: {failed}")
 
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🟢 Bot {bot_num} Active!\n\nAdmin Panel: /admin")
 
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
@@ -310,7 +312,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return app
 
-async def start_all_bots():
+async def main_runner():
     app1 = build_bot_app(TOKEN_BOT_1, 1)
     app2 = build_bot_app(TOKEN_BOT_2, 2)
     app3 = build_bot_app(TOKEN_BOT_3, 3)
@@ -325,13 +327,21 @@ async def start_all_bots():
 
     await app1.updater.start_polling(allowed_updates=["message", "chat_join_request", "chat_member", "callback_query"], drop_pending_updates=True)
     await app2.updater.start_polling(allowed_updates=["message", "chat_join_request", "chat_member", "callback_query"], drop_pending_updates=True)
-    await app3.updater.start_polling(allowed_updates=["message", "chat_join_request", "chat_member", "callback_query"], drop_pending_updates=True)
+    app3_polling = app3.updater.start_polling(allowed_updates=["message", "chat_join_request", "chat_member", "callback_query"], drop_pending_updates=True)
+    if asyncio.iscoroutine(app3_polling):
+        await app3_polling
 
-    logging.info("All 3 bots started polling successfully!")
+    logging.info("All 3 bots started successfully!")
 
+    # अनंत समय तक बोट को जिंदा रखने के लिए
     while True:
         await asyncio.sleep(3600)
 
-if name == "main":
+if __name__ == "__main__":
+    # हेल्थ चेक सर्वर बैकग्राउंड में चलाना (Render के पोर्ट बाइंडिंग इश्यू से बचाने के लिए)
     threading.Thread(target=run_health_check_server, daemon=True).start()
-    asyncio.run(start_all_bots())
+    
+    try:
+        asyncio.run(main_runner())
+    except (KeyboardInterrupt, SystemExit):
+        logging.info("Bots stopped gracefully.")
