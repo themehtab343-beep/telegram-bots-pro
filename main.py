@@ -21,11 +21,11 @@ OWNER_ID = 8796084661
 API_ID = 36845944
 API_HASH = "52a5e3343ba1edfe88ca570b42d15e7d"
 
-# आपके नए 3 बोट टोकन्स यहाँ अपडेट कर दिए गए हैं
+# आपके नए और सुरक्षित 3 बोट टोकन्स
 BOT_TOKENS = {
-    1: "8950741154:AAF72k0B-3GMw6D7VEe4rYHUcfqTPKkTfnM",
-    2: "8975139578:AAFNv-PDs9txGheZ7aVRSVW2rzOrpV3YjlQ",
-    3: "8723910838:AAGB94pJ8ZjAKkCzqHu1tftFHWSg3kUBg00"
+    1: "8950741154:AAFVa4BrUf81Eh12vz3L5y3xy8240paa36k",
+    2: "8975139578:AAFzYWXNbJceY5EFo3a4O2MXXai2w5y2kiQ",
+    3: "8723910838:AAHTLbgntVTlZw0P37B0D4yzrUvxxSaVEGs"
 }
 
 user_states = {}
@@ -311,7 +311,7 @@ async def main():
         await app2.start()
         await app3.start()
 
-        logging.info("All 3 VIP Bots Running Successfully with New Tokens!")
+        logging.info("All 3 Bots Running Safely with New Secure Tokens!")
         await asyncio.Event().wait()
     except Exception as e:
         logging.critical(f"Error: {e}", exc_info=True)
