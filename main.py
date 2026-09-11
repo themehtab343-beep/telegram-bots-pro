@@ -21,10 +21,11 @@ OWNER_ID = 8796084661
 API_ID = 36845944
 API_HASH = "52a5e3343ba1edfe88ca570b42d15e7d"
 
+# आपके नए 3 बोट टोकन्स यहाँ अपडेट कर दिए गए हैं
 BOT_TOKENS = {
-    1: "8723910838:AAFfWtVYGMX23u1WeboqtCRdc_4oMEvz0jo",
-    2: "8975139578:AAG6sX9SFMz3Fk0Rgb4W16CeSPT2ibMW2xI",
-    3: "8950741154:AAHXRNRR8iVqIo3BB1YqMaRrih-cOvljHaY"
+    1: "8950741154:AAF72k0B-3GMw6D7VEe4rYHUcfqTPKkTfnM",
+    2: "8975139578:AAFNv-PDs9txGheZ7aVRSVW2rzOrpV3YjlQ",
+    3: "8723910838:AAGB94pJ8ZjAKkCzqHu1tftFHWSg3kUBg00"
 }
 
 user_states = {}
@@ -75,7 +76,6 @@ def save_data(bot_num, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def get_main_reply_keyboard():
-    # चैट के नीचे दिखने वाला मुख्य कीबोर्ड (स्क्रीनशॉट के अनुसार)
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton("🎯 Get The Number Sureshot Hack")],
@@ -97,7 +97,6 @@ def create_bot_app(bot_num, token):
     async def send_welcome_content(client, user_id):
         data = load_data(bot_num)
         saved_msgs = data.get("saved_messages", [])
-        
         reply_kb = get_main_reply_keyboard()
 
         if saved_msgs:
@@ -112,7 +111,6 @@ def create_bot_app(bot_num, token):
                 except Exception as e:
                     logging.error(f"Error copying saved message: {e}")
             
-            # आखिरी में मुख्य कीबोर्ड भेजें
             try:
                 await client.send_message(
                     chat_id=user_id,
@@ -131,7 +129,6 @@ def create_bot_app(bot_num, token):
             except Exception:
                 pass
 
-    # 1. जब यूजर `/start` कमांड भेजे
     @app.on_message(filters.command("start") & filters.private)
     async def start_cmd(client, message):
         user_id = message.from_user.id
@@ -143,7 +140,6 @@ def create_bot_app(bot_num, token):
 
         await send_welcome_content(client, user_id)
 
-    # 2. जब यूजर चैनल पर Join Request भेजे (बिना स्टार्ट किए भी मैसेज चला जाएगा)
     @app.on_chat_join_request()
     async def handle_join_request(client, chat_join_request):
         user_id = chat_join_request.from_user.id
@@ -153,18 +149,15 @@ def create_bot_app(bot_num, token):
             data["users"].append(user_id)
             save_data(bot_num, data)
 
-        # आटोमैटिक अप्रूव भी कर सकते हैं या सीधा मैसेज भेज सकते हैं
         await chat_join_request.approve()
         await send_welcome_content(client, user_id)
 
-    # 3. नीचे वाले कीबोर्ड के बटन्स के रिस्पॉन्स
     @app.on_message(filters.private & ~filters.command(["admin"]))
     async def handle_reply_keyboard_clicks(client, message):
         user_id = message.from_user.id
         text = message.text
         data = load_data(bot_num)
 
-        # यदि एडमिन कुछ सेविंग मोड या इनपुट मोड में है
         if user_id in data["admins"] and user_id in user_states:
             state = user_states[user_id]
             if state["bot_num"] == bot_num:
@@ -206,7 +199,6 @@ def create_bot_app(bot_num, token):
                         await message.reply_text("❌ Invalid ID!")
                     return
 
-        # रिप्लाई कीबोर्ड के जवाब
         if text == "🎯 Get The Number Sureshot Hack":
             await message.reply_text("📥 **Download your hack file from above or use official link below.**", reply_markup=get_main_reply_keyboard())
         elif text == "🔗 Shreewin Official Link":
@@ -214,7 +206,6 @@ def create_bot_app(bot_num, token):
         elif text == "🎁 Contact Official Customer Support or Loss Recovery":
             await message.reply_text("💬 Contact Support: @ANURAGARMY_HELP", reply_markup=get_main_reply_keyboard())
 
-    # 4. एडमिन पैनल कमांड
     @app.on_message(filters.command("admin") & filters.private)
     async def admin_panel(client, message):
         user_id = message.from_user.id
@@ -233,7 +224,6 @@ def create_bot_app(bot_num, token):
             f"📦 **Saved Messages:** `{total_saved}`"
         )
 
-        # स्क्रीनशॉट जैसी सुंदर कलरफुल स्टाइल वाले इनलाइन बटन्स
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📢 Send Broadcast", callback_data="bc_start"),
              InlineKeyboardButton("🗑️ Clear All Messages", callback_data="bc_clear")],
@@ -245,7 +235,6 @@ def create_bot_app(bot_num, token):
 
         await message.reply_text(text, reply_markup=keyboard)
 
-    # 5. एडमिन कॉलफैक बटन्स
     @app.on_callback_query()
     async def admin_callbacks(client, callback_query):
         user_id = callback_query.from_user.id
@@ -322,7 +311,7 @@ async def main():
         await app2.start()
         await app3.start()
 
-        logging.info("All VIP Bots Running with Join Request & Reply Keyboard Support!")
+        logging.info("All 3 VIP Bots Running Successfully with New Tokens!")
         await asyncio.Event().wait()
     except Exception as e:
         logging.critical(f"Error: {e}", exc_info=True)
