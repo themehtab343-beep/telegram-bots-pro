@@ -84,12 +84,10 @@ def get_dynamic_reply_keyboard(bot_num):
     buttons = data.get("custom_buttons", [])
     keyboard_rows = []
     
-    # अनुराग वाले बोट की तरह हर बटन को अलग कलरफुल लुक देना
     colors = ["🟥 ", "🟩 ", "🟦 ", "🟨 ", "🟪 "]
     
     for idx, btn in enumerate(buttons):
         text = btn.get("text")
-        # अगर पहले से कलर नहीं है तो आटोमेटिक कलर इमोजी जोड़ दें
         if not any(text.startswith(c) for c in ["🟥", "🟩", "🟦", "🟨", "🟪", "🔴", "🟢", "🔵"]):
             color_prefix = colors[idx % len(colors)]
             text = f"{color_prefix}{text}"
@@ -177,7 +175,6 @@ def create_bot_app(bot_num, token):
         text = message.text
         data = load_data(bot_num)
 
-        # एडमिन स्टेट्स हैंडलिंग
         if user_id in data["admins"] and user_id in user_states:
             state = user_states[user_id]
             if state["bot_num"] == bot_num:
@@ -226,12 +223,10 @@ def create_bot_app(bot_num, token):
                         await message.reply_text("❌ Invalid ID!")
                     return
 
-        # कस्टम बटन्स के क्लिक रिस्पॉन्स (इमोजी हटाकर मैच करना)
         buttons = data.get("custom_buttons", [])
         matched = False
         for btn in buttons:
             btn_raw_text = btn.get("text")
-            # अगर यूजर ने क्लिक किया है (चाहे इमोजी के साथ या बिना)
             if text.endswith(btn_raw_text.replace("🟥 ", "").replace("🟩 ", "").replace("🟦 ", "").replace("🟨 ", "").replace("🟪 ", "")) or text == btn_raw_text:
                 matched = True
                 url = btn.get("url", "")
@@ -264,15 +259,16 @@ def create_bot_app(bot_num, token):
             f"🎛️ **Menu Buttons:** `{total_btns}`"
         )
 
+        # आपके स्क्रीनशॉट वाले बिल्कुल सटीक नीले, हरे और लाल रंग के इनलाइन बटन्स
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📢 Send Broadcast", callback_data="bc_start"),
              InlineKeyboardButton("🗑️ Clear Messages", callback_data="bc_clear")],
-            [InlineKeyboardButton("➕ Save New Messages", callback_data="bc_save_new")],
-            [InlineKeyboardButton("➕ Add Menu Button", callback_data="btn_add"),
-             InlineKeyboardButton("📋 Manage/Remove Buttons", callback_data="btn_manage")],
-            [InlineKeyboardButton("⚡ Approve All Requests", callback_data="approve_all")],
-            [InlineKeyboardButton("➕ Add Admin", callback_data="add_admin"),
-             InlineKeyboardButton("➖ Remove Admin", callback_data="rem_admin")]
+            [InlineKeyboardButton("🟩 Save New Messages", callback_data="bc_save_new")],
+            [InlineKeyboardButton("🟦 Add Menu Button", callback_data="btn_add"),
+             InlineKeyboardButton("🟥 Manage/Remove Buttons", callback_data="btn_manage")],
+            [InlineKeyboardButton("🟩 Approve All Requests", callback_data="approve_all")],
+            [InlineKeyboardButton("🟦 Add Admin", callback_data="add_admin"),
+             InlineKeyboardButton("🟥 Remove Admin", callback_data="rem_admin")]
         ])
 
         await message.reply_text(text, reply_markup=keyboard)
@@ -384,7 +380,7 @@ async def main():
         await app2.start()
         await app3.start()
 
-        logging.info("All 3 Bots Running with Colorful Buttons & Dynamic Manager!")
+        logging.info("All 3 Bots Running with Colored Inline & Reply Buttons!")
         await asyncio.Event().wait()
     except Exception as e:
         logging.critical(f"Error: {e}", exc_info=True)
