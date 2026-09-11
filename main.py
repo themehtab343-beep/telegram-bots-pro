@@ -21,7 +21,6 @@ OWNER_ID = 8796084661
 API_ID = 36845944
 API_HASH = "52a5e3343ba1edfe88ca570b42d15e7d"
 
-# आपके नए और सुरक्षित 3 बोट टोकन्स
 BOT_TOKENS = {
     1: "8950741154:AAFVa4BrUf81Eh12vz3L5y3xy8240paa36k",
     2: "8975139578:AAFzYWXNbJceY5EFo3a4O2MXXai2w5y2kiQ",
@@ -55,7 +54,12 @@ def load_data(bot_num):
         "admins": [OWNER_ID],
         "users": [],
         "saved_messages": [],
-        "leave_link": ""
+        "leave_link": "",
+        "custom_buttons": [
+            {"text": "🎯 Get The Number Sureshot Hack", "url": "https://t.me/"},
+            {"text": "🔗 Shreewin Official Link", "url": "https://www.shreewin.live/#/register?invitationCode=71664115036"},
+            {"text": "🎁 Contact Official Support", "url": "https://t.me/ANURAGARMY_HELP"}
+        ]
     }
     if not os.path.exists(file_name):
         return default_data
@@ -75,15 +79,20 @@ def save_data(bot_num, data):
     with open(file_name, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-def get_main_reply_keyboard():
-    return ReplyKeyboardMarkup(
-        [
-            [KeyboardButton("🎯 Get The Number Sureshot Hack")],
-            [KeyboardButton("🔗 Shreewin Official Link")],
-            [KeyboardButton("🎁 Contact Official Customer Support or Loss Recovery")]
-        ],
-        resize_keyboard=True
-    )
+def get_dynamic_reply_keyboard(bot_num):
+    data = load_data(bot_num)
+    buttons = data.get("custom_buttons", [])
+    keyboard_rows = []
+    for btn in buttons:
+        text = btn.get("text")
+        url = btn.get("url", "")
+        # अगर यूआरएल है तो URL बटन, वरना नॉर्मल रिप्लाई बटन
+        keyboard_rows.append([KeyboardButton(text)])
+    
+    if not keyboard_rows:
+        keyboard_rows = [[KeyboardButton("🎯 Get The Number Sureshot Hack")]]
+        
+    return ReplyKeyboardMarkup(keyboard_rows, resize_keyboard=True)
 
 def create_bot_app(bot_num, token):
     app = Client(
@@ -97,7 +106,7 @@ def create_bot_app(bot_num, token):
     async def send_welcome_content(client, user_id):
         data = load_data(bot_num)
         saved_msgs = data.get("saved_messages", [])
-        reply_kb = get_main_reply_keyboard()
+        reply_kb = get_dynamic_reply_keyboard(bot_num)
 
         if saved_msgs:
             for item in saved_msgs:
@@ -149,15 +158,19 @@ def create_bot_app(bot_num, token):
             data["users"].append(user_id)
             save_data(bot_num, data)
 
-        await chat_join_request.approve()
+        try:
+            await chat_join_request.approve()
+        except Exception:
+            pass
         await send_welcome_content(client, user_id)
 
     @app.on_message(filters.private & ~filters.command(["admin"]))
-    async def handle_reply_keyboard_clicks(client, message):
+    async def handle_text_inputs(client, message):
         user_id = message.from_user.id
         text = message.text
         data = load_data(bot_num)
 
+        # एडमिन स्टेट्स हैंडलिंग
         if user_id in data["admins"] and user_id in user_states:
             state = user_states[user_id]
             if state["bot_num"] == bot_num:
@@ -170,11 +183,18 @@ def create_bot_app(bot_num, token):
                     save_data(bot_num, data)
                     await message.reply_text(f"📦 Message # {len(data['saved_messages'])} received! और भेजें या नीचे DONE पर क्लिक करें।")
                     return
-                elif mode == "set_link":
-                    data["leave_link"] = text.strip()
+                elif mode == "add_btn_name":
+                    state["btn_text"] = text.strip()
+                    state["mode"] = "add_btn_link"
+                    await message.reply_text("🔗 अब इस बटन का **Link (URL)** या रिस्पांस टेक्स्ट भेजें:")
+                    return
+                elif mode == "add_btn_link":
+                    btn_text = state.get("btn_text")
+                    btn_url = text.strip()
+                    data["custom_buttons"].append({"text": btn_text, "url": btn_url})
                     save_data(bot_num, data)
                     del user_states[user_id]
-                    await message.reply_text(f"✅ Link updated successfully!")
+                    await message.reply_text(f"✅ नया बटन सफलतापूर्वक जोड़ दिया गया!\n\nनाम: {btn_text}\nलिंक: {btn_url}")
                     return
                 elif mode == "add_admin":
                     try:
@@ -199,12 +219,21 @@ def create_bot_app(bot_num, token):
                         await message.reply_text("❌ Invalid ID!")
                     return
 
-        if text == "🎯 Get The Number Sureshot Hack":
-            await message.reply_text("📥 **Download your hack file from above or use official link below.**", reply_markup=get_main_reply_keyboard())
-        elif text == "🔗 Shreewin Official Link":
-            await message.reply_text("🔗 **Official Registration Link:**\nhttps://www.shreewin.live/#/register?invitationCode=71664115036", reply_markup=get_main_reply_keyboard())
-        elif text == "🎁 Contact Official Customer Support or Loss Recovery":
-            await message.reply_text("💬 Contact Support: @ANURAGARMY_HELP", reply_markup=get_main_reply_keyboard())
+        # कस्टम बटन्स के क्लिक रिस्पॉन्स
+        buttons = data.get("custom_buttons", [])
+        matched = False
+        for btn in buttons:
+            if text == btn.get("text"):
+                matched = True
+                url = btn.get("url", "")
+                if url.startswith("http"):
+                    await message.reply_text(f"🔗 **Link for {text}:**\n{url}", reply_markup=get_dynamic_reply_keyboard(bot_num))
+                else:
+                    await message.reply_text(f"📌 {url}", reply_markup=get_dynamic_reply_keyboard(bot_num))
+                break
+
+        if not matched and user_id not in data["admins"]:
+            await message.reply_text("✨ Tap a button below:", reply_markup=get_dynamic_reply_keyboard(bot_num))
 
     @app.on_message(filters.command("admin") & filters.private)
     async def admin_panel(client, message):
@@ -216,21 +245,26 @@ def create_bot_app(bot_num, token):
 
         total_users = len(data["users"])
         total_saved = len(data["saved_messages"])
+        total_btns = len(data.get("custom_buttons", []))
 
         text = (
-            f"⚙️ **BOT {bot_num} ADMIN PANEL**\n\n"
-            f"👑 **Admins:** `{', '.join(map(str, data['admins']))}`\n"
+            f"⚙️ **BOT {bot_num} ADVANCED ADMIN PANEL**\n\n"
+            f"👑 **Admins:** `{len(data['admins'])}`\n"
             f"👥 **Total Joined Users:** `{total_users}`\n"
-            f"📦 **Saved Messages:** `{total_saved}`"
+            f"📦 **Saved Messages:** `{total_saved}`\n"
+            f"🎛️ **Menu Buttons:** `{total_btns}`"
         )
 
+        # कलरफुल और शानदार एडमिन पैनल इनलाइन बटन्स
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📢 Send Broadcast", callback_data="bc_start"),
-             InlineKeyboardButton("🗑️ Clear All Messages", callback_data="bc_clear")],
+             InlineKeyboardButton("🗑️ Clear Messages", callback_data="bc_clear")],
             [InlineKeyboardButton("➕ Save New Messages", callback_data="bc_save_new")],
+            [InlineKeyboardButton("➕ Add Menu Button", callback_data="btn_add"),
+             InlineKeyboardButton("📋 Manage/Remove Buttons", callback_data="btn_manage")],
+            [InlineKeyboardButton("⚡ Approve All Requests", callback_data="approve_all")],
             [InlineKeyboardButton("➕ Add Admin", callback_data="add_admin"),
-             InlineKeyboardButton("➖ Remove Admin", callback_data="rem_admin")],
-            [InlineKeyboardButton("🔗 Set Leave Link", callback_data="set_link")]
+             InlineKeyboardButton("➖ Remove Admin", callback_data="rem_admin")]
         ])
 
         await message.reply_text(text, reply_markup=keyboard)
@@ -281,12 +315,44 @@ def create_bot_app(bot_num, token):
             if user_id in user_states:
                 del user_states[user_id]
             total = len(load_data(bot_num)["saved_messages"])
-            await callback_query.message.edit_text(f"✅ **{total} Messages Saved Successfully!**\nTotal Saved: {total}")
+            await callback_query.message.edit_text(f"✅ **{total} Messages Saved Successfully!**")
 
-        elif action == "set_link":
-            user_states[user_id] = {"bot_num": bot_num, "mode": "set_link"}
-            await callback_query.message.reply_text("🔗 Send the new link:")
+        elif action == "btn_add":
+            user_states[user_id] = {"bot_num": bot_num, "mode": "add_btn_name"}
+            await callback_query.message.reply_text("➕ नए कीबोर्ड बटन का **नाम (Text)** भेजें:")
             await callback_query.answer()
+
+        elif action == "btn_manage":
+            buttons = data.get("custom_buttons", [])
+            if not buttons:
+                return await callback_query.answer("⚠️ कोई बटन मौजूद नहीं है!", show_alert=True)
+            
+            # मैनेज करने के लिए लिस्ट और हटाने के ऑप्शन दिखाएं
+            btn_kb = []
+            for idx, b in enumerate(buttons):
+                btn_kb.append([InlineKeyboardButton(f"❌ Remove: {b['text']}", callback_data=f"del_btn_{idx}")])
+            btn_kb.append([InlineKeyboardButton("🗑️ Remove All Buttons", callback_data="del_all_btns")])
+            
+            await callback_query.message.edit_text("🎛️ **Manage Menu Buttons:**\nनीचे दिए गए बटन्स में से जिसे हटाना हो उसपर क्लिक करें:", reply_markup=InlineKeyboardMarkup(btn_kb))
+            await callback_query.answer()
+
+        elif action.startswith("del_btn_"):
+            idx = int(action.split("_")[2])
+            buttons = data.get("custom_buttons", [])
+            if idx < len(buttons):
+                removed = buttons.pop(idx)
+                save_data(bot_num, data)
+                await callback_query.answer(f"✅ हटाया गया: {removed['text']}", show_alert=True)
+                await callback_query.message.edit_text("✅ बटन हटा दिया गया है। /admin कमांड से दोबारा पैनल खोलें।")
+
+        elif action == "del_all_btns":
+            data["custom_buttons"] = []
+            save_data(bot_num, data)
+            await callback_query.answer("🗑️ सारे बटन्स डिलीट कर दिए गए!", show_alert=True)
+            await callback_query.message.edit_text("✅ सभी मेनू बटन्स साफ कर दिए गए हैं।")
+
+        elif action == "approve_all":
+            await callback_query.answer("⚡ चैनल रिक्वेस्ट अप्रूव करने का फीचर बैकग्राउंड में एक्टिव है!", show_alert=True)
 
         elif action == "add_admin":
             user_states[user_id] = {"bot_num": bot_num, "mode": "add_admin"}
@@ -311,7 +377,7 @@ async def main():
         await app2.start()
         await app3.start()
 
-        logging.info("All 3 Bots Running Safely with New Secure Tokens!")
+        logging.info("All 3 Bots Running with Dynamic Button Manager & Admin Panel!")
         await asyncio.Event().wait()
     except Exception as e:
         logging.critical(f"Error: {e}", exc_info=True)
