@@ -134,13 +134,14 @@ def create_bot_app(bot_num, token):
             f"📦 **Saved Messages:** `{total_saved}`"
         )
 
+        # रंग-बिरंगे और सुंदर बटन्स (Colored & Styled Admin Panel Buttons)
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📢 Send Broadcast", callback_data="bc_start"),
-             InlineKeyboardButton("🗑️ Clear All Messages", callback_data="bc_clear")],
-            [InlineKeyboardButton("➕ Save New Messages", callback_data="bc_save_new")],
-            [InlineKeyboardButton("➕ Add Admin", callback_data="add_admin"),
-             InlineKeyboardButton("➖ Remove Admin", callback_data="rem_admin")],
-            [InlineKeyboardButton("🔗 Set Leave Link", callback_data="set_link")]
+            [InlineKeyboardButton("📢 🟢 Send Broadcast", callback_data="bc_start"),
+             InlineKeyboardButton("🗑️ 🔴 Clear Messages", callback_data="bc_clear")],
+            [InlineKeyboardButton("➕ 🔵 Save New Messages", callback_data="bc_save_new")],
+            [InlineKeyboardButton("➕ 🟡 Add Admin", callback_data="add_admin"),
+             InlineKeyboardButton("➖ 🟠 Remove Admin", callback_data="rem_admin")],
+            [InlineKeyboardButton("🔗 🟣 Set Leave Link", callback_data="set_link")]
         ])
 
         await message.reply_text(text, reply_markup=keyboard)
@@ -193,7 +194,7 @@ def create_bot_app(bot_num, token):
             data["saved_messages"] = [] # पुराना साफ करके नया जोड़ेंगे
             save_data(bot_num, data)
             
-            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ DONE", callback_data="save_done")]])
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ 🟢 DONE SAVING", callback_data="save_done")]])
             await callback_query.message.reply_text(
                 "📥 **Message Saving Mode Active!**\n\nअब आप जो भी मैसेज, फोटो, वीडियो या **प्रीमियम स्टीकर** भेजेंगे, वो सेव होता जाएगा। भेजने के बाद नीचे **DONE** पर क्लिक करें।",
                 reply_markup=keyboard
