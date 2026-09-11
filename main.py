@@ -1,4 +1,3 @@
-Bot code:
 import os
 import json
 import logging
