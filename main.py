@@ -56,9 +56,9 @@ def load_data(bot_num):
         "saved_messages": [],
         "leave_link": "",
         "custom_buttons": [
-            {"text": "🎯 Get The Number Sureshot Hack", "url": "https://t.me/"},
-            {"text": "🔗 Shreewin Official Link", "url": "https://www.shreewin.live/#/register?invitationCode=71664115036"},
-            {"text": "🎁 Contact Official Support", "url": "https://t.me/ANURAGARMY_HELP"}
+            {"text": "🟥 Get The Number Sureshot Hack", "url": "https://t.me/"},
+            {"text": "🟩 Shreewin Official Link", "url": "https://www.shreewin.live/#/register?invitationCode=71664115036"},
+            {"text": "🟦 Contact Official Customer Support", "url": "https://t.me/ANURAGARMY_HELP"}
         ]
     }
     if not os.path.exists(file_name):
@@ -83,14 +83,21 @@ def get_dynamic_reply_keyboard(bot_num):
     data = load_data(bot_num)
     buttons = data.get("custom_buttons", [])
     keyboard_rows = []
-    for btn in buttons:
+    
+    # अनुराग वाले बोट की तरह हर बटन को अलग कलरफुल लुक देना
+    colors = ["🟥 ", "🟩 ", "🟦 ", "🟨 ", "🟪 "]
+    
+    for idx, btn in enumerate(buttons):
         text = btn.get("text")
-        url = btn.get("url", "")
-        # अगर यूआरएल है तो URL बटन, वरना नॉर्मल रिप्लाई बटन
+        # अगर पहले से कलर नहीं है तो आटोमेटिक कलर इमोजी जोड़ दें
+        if not any(text.startswith(c) for c in ["🟥", "🟩", "🟦", "🟨", "🟪", "🔴", "🟢", "🔵"]):
+            color_prefix = colors[idx % len(colors)]
+            text = f"{color_prefix}{text}"
+            
         keyboard_rows.append([KeyboardButton(text)])
     
     if not keyboard_rows:
-        keyboard_rows = [[KeyboardButton("🎯 Get The Number Sureshot Hack")]]
+        keyboard_rows = [[KeyboardButton("🟥 Get The Number Sureshot Hack")]]
         
     return ReplyKeyboardMarkup(keyboard_rows, resize_keyboard=True)
 
@@ -194,7 +201,7 @@ def create_bot_app(bot_num, token):
                     data["custom_buttons"].append({"text": btn_text, "url": btn_url})
                     save_data(bot_num, data)
                     del user_states[user_id]
-                    await message.reply_text(f"✅ नया बटन सफलतापूर्वक जोड़ दिया गया!\n\nनाम: {btn_text}\nलिंक: {btn_url}")
+                    await message.reply_text(f"✅ नया कलरफुल बटन जोड़ दिया गया!\n\nनाम: {btn_text}\nलिंक: {btn_url}")
                     return
                 elif mode == "add_admin":
                     try:
@@ -219,15 +226,17 @@ def create_bot_app(bot_num, token):
                         await message.reply_text("❌ Invalid ID!")
                     return
 
-        # कस्टम बटन्स के क्लिक रिस्पॉन्स
+        # कस्टम बटन्स के क्लिक रिस्पॉन्स (इमोजी हटाकर मैच करना)
         buttons = data.get("custom_buttons", [])
         matched = False
         for btn in buttons:
-            if text == btn.get("text"):
+            btn_raw_text = btn.get("text")
+            # अगर यूजर ने क्लिक किया है (चाहे इमोजी के साथ या बिना)
+            if text.endswith(btn_raw_text.replace("🟥 ", "").replace("🟩 ", "").replace("🟦 ", "").replace("🟨 ", "").replace("🟪 ", "")) or text == btn_raw_text:
                 matched = True
                 url = btn.get("url", "")
                 if url.startswith("http"):
-                    await message.reply_text(f"🔗 **Link for {text}:**\n{url}", reply_markup=get_dynamic_reply_keyboard(bot_num))
+                    await message.reply_text(f"🔗 **Official Link:**\n{url}", reply_markup=get_dynamic_reply_keyboard(bot_num))
                 else:
                     await message.reply_text(f"📌 {url}", reply_markup=get_dynamic_reply_keyboard(bot_num))
                 break
@@ -255,7 +264,6 @@ def create_bot_app(bot_num, token):
             f"🎛️ **Menu Buttons:** `{total_btns}`"
         )
 
-        # कलरफुल और शानदार एडमिन पैनल इनलाइन बटन्स
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📢 Send Broadcast", callback_data="bc_start"),
              InlineKeyboardButton("🗑️ Clear Messages", callback_data="bc_clear")],
@@ -319,7 +327,7 @@ def create_bot_app(bot_num, token):
 
         elif action == "btn_add":
             user_states[user_id] = {"bot_num": bot_num, "mode": "add_btn_name"}
-            await callback_query.message.reply_text("➕ नए कीबोर्ड बटन का **नाम (Text)** भेजें:")
+            await callback_query.message.reply_text("➕ नए कलरफुल कीबोर्ड बटन का **नाम (Text)** भेजें:")
             await callback_query.answer()
 
         elif action == "btn_manage":
@@ -327,7 +335,6 @@ def create_bot_app(bot_num, token):
             if not buttons:
                 return await callback_query.answer("⚠️ कोई बटन मौजूद नहीं है!", show_alert=True)
             
-            # मैनेज करने के लिए लिस्ट और हटाने के ऑप्शन दिखाएं
             btn_kb = []
             for idx, b in enumerate(buttons):
                 btn_kb.append([InlineKeyboardButton(f"❌ Remove: {b['text']}", callback_data=f"del_btn_{idx}")])
@@ -352,7 +359,7 @@ def create_bot_app(bot_num, token):
             await callback_query.message.edit_text("✅ सभी मेनू बटन्स साफ कर दिए गए हैं।")
 
         elif action == "approve_all":
-            await callback_query.answer("⚡ चैनल रिक्वेस्ट अप्रूव करने का फीचर बैकग्राउंड में एक्टिव है!", show_alert=True)
+            await callback_query.answer("⚡ चैनल ज्वाइन रिक्वेस्ट ऑटो-अप्रूव हो रही हैं!", show_alert=True)
 
         elif action == "add_admin":
             user_states[user_id] = {"bot_num": bot_num, "mode": "add_admin"}
@@ -377,7 +384,7 @@ async def main():
         await app2.start()
         await app3.start()
 
-        logging.info("All 3 Bots Running with Dynamic Button Manager & Admin Panel!")
+        logging.info("All 3 Bots Running with Colorful Buttons & Dynamic Manager!")
         await asyncio.Event().wait()
     except Exception as e:
         logging.critical(f"Error: {e}", exc_info=True)
