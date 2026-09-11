@@ -2,19 +2,9 @@ import os
 import json
 import logging
 import asyncio
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ChatJoinRequestHandler,
-    ChatMemberHandler,
-    CallbackQueryHandler,
-    MessageHandler,
-    ContextTypes,
-    filters
-)
+from aiohttp import web
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -22,22 +12,36 @@ logging.basicConfig(
 )
 
 OWNER_ID = 8796084661
+API_ID = 36845944
+API_HASH = "52a5e3343ba1edfe88ca570b42d15e7d"
 
-TOKEN_BOT_1 = "8723910838:AAFfWtVYGMX23u1WeboqtCRdc_4oMEvz0jo"
-TOKEN_BOT_2 = "8975139578:AAG6sX9SFMz3Fk0Rgb4W16CeSPT2ibMW2xI"
-TOKEN_BOT_3 = "8950741154:AAHXRNRR8iVqIo3BB1YqMaRrih-cOvljHaY"
+BOT_TOKENS = {
+    1: "8723910838:AAFfWtVYGMX23u1WeboqtCRdc_4oMEvz0jo",
+    2: "8975139578:AAG6sX9SFMz3Fk0Rgb4W16CeSPT2ibMW2xI",
+    3: "8950741154:AAHXRNRR8iVqIo3BB1YqMaRrih-cOvljHaY"
+}
 
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bots Live 24/7!")
+# अस्थायी स्टेट होल्ड करने के लिए (मैसेज सेविंग प्रोसेस हेतु)
+user_states = {}
 
-def run_health_check_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    server.serve_forever()
+# स्वास्थ्य जांच सर्वर (Render के लिए)
+async def handle_ping(request):
+    return web.Response(text="Bots Live 24/7!")
 
+async def start_web_server():
+    try:
+        app = web.Application()
+        app.router.add_get("/", handle_ping)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        port = int(os.environ.get("PORT", 8080))
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+        logging.info(f"Health check server running on port {port}")
+    except Exception as e:
+        logging.error(f"Web server error: {e}")
+
+# डेटा मैनेजमेंट
 def get_data_file(bot_num):
     return f"bot{bot_num}_data.json"
 
@@ -67,281 +71,234 @@ def save_data(bot_num, data):
     with open(file_name, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-def build_bot_app(token, bot_num):
-    app = Application.builder().token(token).build()
+def create_bot_app(bot_num, token):
+    app = Client(
+        name=f"bot_{bot_num}",
+        api_id=API_ID,
+        api_hash=API_HASH,
+        bot_token=token,
+        in_memory=True
+    )
 
-    async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        request = update.chat_join_request
-        user = request.from_user
-        user_id = user.id
-
+    @app.on_message(filters.command("start") & filters.private)
+    async def start_cmd(client, message):
+        user_id = message.from_user.id
         data = load_data(bot_num)
+        
         if user_id not in data["users"]:
             data["users"].append(user_id)
             save_data(bot_num, data)
 
+        # यदि सेव किए गए मैसेज हैं, तो यूजर को भेजें
         saved_msgs = data.get("saved_messages", [])
+        leave_link = data.get("leave_link", "")
 
-        for idx, item in enumerate(saved_msgs):
-            try:
-                from_chat_id = item.get("from_chat_id")
-                message_id = item.get("message_id")
-                reply_markup_dict = item.get("reply_markup")
+        if saved_msgs:
+            for item in saved_msgs:
+                try:
+                    chat_id = item.get("chat_id")
+                    msg_id = item.get("msg_id")
+                    
+                    # कॉपी करते वक्त मूल बटन या लीव लिंक को व्यवस्थित करें
+                    markup = None
+                    if leave_link:
+                        markup = InlineKeyboardMarkup([[InlineKeyboardButton("📢 Join Channel / Support", url=leave_link)]])
 
-                reply_markup = InlineKeyboardMarkup.de_json(reply_markup_dict, context.bot) if reply_markup_dict else None
-
-                # copy_message प्रीमियम स्टिकर, फोटो, वीडियो और हर तरह के मीडिया को सपोर्ट करता है
-                sent_msg = await context.bot.copy_message(
-                    chat_id=user_id,
-                    from_chat_id=from_chat_id,
-                    message_id=message_id,
-                    reply_markup=reply_markup
-                )
-
-                if idx == 1 and sent_msg:
-                    await context.bot.pin_chat_message(
+                    await client.copy_message(
                         chat_id=user_id,
-                        message_id=sent_msg.message_id,
-                        disable_notification=False
+                        from_chat_id=chat_id,
+                        message_id=msg_id,
+                        reply_markup=markup
                     )
-            except Exception as e:
-                logging.error(f"Error copying msg to user {user_id} (Bot {bot_num}): {e}")
+                    await asyncio.sleep(0.2)
+                except Exception as e:
+                    logging.error(f"Error sending saved message: {e}")
+        else:
+            await message.reply_text("🟢 **Welcome!** Bot is active and ready.")
 
-    async def handle_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        result = update.chat_member
-        if not result:
-            return
-        if result.old_chat_member.status in ["member", "administrator"] and result.new_chat_member.status in ["left", "kicked"]:
-            user_id = result.from_user.id
-            data = load_data(bot_num)
-            leave_link = data.get("leave_link", "")
-
-            msg_text = "⚠️ आप चैनल से हट गए हैं!\n\nपुनः जुड़ने के लिए नीचे दिए बटन पर क्लिक करें:"
-            reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Rejoin Channel ↗️", url=leave_link)]]) if leave_link else None
-
-            try:
-                await context.bot.send_message(chat_id=user_id, text=msg_text, reply_markup=reply_markup)
-            except Exception as e:
-                logging.error(f"Error sending leave msg: {e}")
-
-    async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
+    @app.on_message(filters.command("admin") & filters.private)
+    async def admin_panel(client, message):
+        user_id = message.from_user.id
         data = load_data(bot_num)
-        if user_id not in data["admins"]:
-            return
 
-        admins_list_str = ", ".join([str(a) for a in data["admins"]])
-        
-        msg_text = (
-            f"⚙️ <b>BOT {bot_num} ADMIN PANEL</b>\n\n"
-            f"👑 <b>Admins:</b> {admins_list_str}\n"
-            f"👥 <b>Total Joined Users:</b> {len(data['users'])}\n"
-            f"📦 <b>Saved Messages:</b> {len(data['saved_messages'])}"
+        if user_id not in data["admins"]:
+            return await message.reply_text("❌ You are not authorized.")
+
+        total_users = len(data["users"])
+        total_saved = len(data["saved_messages"])
+
+        text = (
+            f"⚙️ **BOT {bot_num} ADMIN PANEL**\n\n"
+            f"👑 **Admins:** `{', '.join(map(str, data['admins']))}`\n"
+            f"👥 **Total Joined Users:** `{total_users}`\n"
+            f"📦 **Saved Messages:** `{total_saved}`"
         )
 
-        admin_keyboard = [
-            [
-                InlineKeyboardButton("📢 Send Broadcast", callback_data="btn_broadcast"),
-                InlineKeyboardButton("🗑️ Clear All Messages", callback_data="btn_clear")
-            ],
-            [
-                InlineKeyboardButton("➕ Save New Messages", callback_data="btn_start_saving")
-            ],
-            [
-                InlineKeyboardButton("➕ Add Admin", callback_data="btn_add_admin"),
-                InlineKeyboardButton("➖ Remove Admin", callback_data="btn_rem_admin")
-            ],
-            [
-                InlineKeyboardButton("🔗 Set Leave Link", callback_data="btn_set_leave")
-            ]
-        ]
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Send Broadcast", callback_data="bc_start"),
+             InlineKeyboardButton("🗑️ Clear All Messages", callback_data="bc_clear")],
+            [InlineKeyboardButton("➕ Save New Messages", callback_data="bc_save_new")],
+            [InlineKeyboardButton("➕ Add Admin", callback_data="add_admin"),
+             InlineKeyboardButton("➖ Remove Admin", callback_data="rem_admin")],
+            [InlineKeyboardButton("🔗 Set Leave Link", callback_data="set_link")]
+        ])
 
-        await update.message.reply_text(msg_text, reply_markup=InlineKeyboardMarkup(admin_keyboard), parse_mode="HTML")
+        await message.reply_text(text, reply_markup=keyboard)
 
-    async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        user_id = query.from_user.id
+    # एडमिन पैनल के इनलाइन बटन कॉलबैक
+    @app.on_callback_query()
+    async def admin_callbacks(client, callback_query):
+        user_id = callback_query.from_user.id
         data = load_data(bot_num)
 
         if user_id not in data["admins"]:
-            await query.answer("❌ Unauthorized!", show_alert=True)
-            return
+            return await callback_query.answer("❌ You are not authorized!", show_alert=True)
 
-        cb_data = query.data
+        action = callback_query.data
 
-        if cb_data == "btn_clear":
+        if action == "bc_start":
+            saved_msgs = data.get("saved_messages", [])
+            target_users = data["users"]
+            if not saved_msgs:
+                return await callback_query.answer("⚠️ No saved messages found to broadcast!", show_alert=True)
+            if not target_users:
+                return await callback_query.answer("❌ No users found.", show_alert=True)
+
+            await callback_query.message.edit_text("📢 Broadcast started to all users...")
+            success, failed = 0, 0
+
+            for uid in target_users:
+                for item in saved_msgs:
+                    try:
+                        await client.copy_message(
+                            chat_id=uid,
+                            from_chat_id=item["chat_id"],
+                            message_id=item["msg_id"]
+                        )
+                        success += 1
+                        await asyncio.sleep(0.1)
+                    except Exception:
+                        failed += 1
+
+            await callback_query.message.reply_text(f"✅ Broadcast Completed!\nSuccess: {success}\nFailed: {failed}")
+
+        elif action == "bc_clear":
             data["saved_messages"] = []
             save_data(bot_num, data)
-            await query.answer("🗑️ All saved messages deleted!", show_alert=True)
-            await query.message.edit_text("🗑️ All saved messages have been cleared.")
+            await callback_query.answer("🗑️ All saved messages cleared!", show_alert=True)
+            await callback_query.message.edit_text("✅ Saved messages cleared successfully.")
 
-        elif cb_data == "btn_start_saving":
-            context.user_data["action"] = "saving_messages"
-            context.user_data["temp_msgs"] = []
-            
-            done_keyboard = ReplyKeyboardMarkup([["✅ DONE"]], resize_keyboard=True)
-            await query.message.reply_text(
-                "📥 <b>Save Mode Active!</b>\n\nअब आप जो-जो मैसेज सेव करना चाहते हैं (टेक्स्ट, फोटो, वीडियो, प्रीमियम स्टीकर या बटन्स वाले मैसेज), बारी-बारी से भेजें।\nसारे मैसेज भेजने के बाद नीचे दिए <b>✅ DONE</b> बटन पर क्लिक करें।",
-                parse_mode="HTML",
-                reply_markup=done_keyboard
-            )
-            await query.answer()
-
-        elif cb_data == "btn_broadcast":
-            context.user_data["action"] = "wait_broadcast"
-            await query.message.reply_text("📢 अब वो मैसेज या मीडिया भेजें जिसे सभी यूज़र्स को ब्रॉडकास्ट करना है:")
-            await query.answer()
-
-        elif cb_data == "btn_add_admin":
-            context.user_data["action"] = "wait_add_admin"
-            await query.message.reply_text("➕ जिसे एडमिन बनाना है उसकी Telegram User ID भेजें:")
-            await query.answer()
-
-        elif cb_data == "btn_rem_admin":
-            context.user_data["action"] = "wait_rem_admin"
-            await query.message.reply_text("➖ जिसे एडमिन से हटाना है उसकी Telegram User ID भेजें:")
-            await query.answer()
-
-        elif cb_data == "btn_set_leave":
-            context.user_data["action"] = "wait_leave_link"
-            await query.message.reply_text("🔗 चैनल का नया Rejoin Link भेजें:")
-            await query.answer()
-
-    async def message_collector_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-        data = load_data(bot_num)
-        if user_id not in data["admins"]:
-            return
-
-        action = context.user_data.get("action")
-        if not action:
-            return
-
-        if action == "saving_messages":
-            text = update.message.text
-            if text == "✅ DONE":
-                temp_msgs = context.user_data.get("temp_msgs", [])
-                if temp_msgs:
-                    data["saved_messages"].extend(temp_msgs)
-                    save_data(bot_num, data)
-                    await update.message.reply_text(
-                        f"✅ <b>{len(temp_msgs)} Messages Saved Successfully!</b>\nTotal Saved: {len(data['saved_messages'])}",
-                        parse_mode="HTML",
-                        reply_markup=ReplyKeyboardRemove()
-                    )
-                else:
-                    await update.message.reply_text(
-                        "⚠️ कोई मैसेज प्राप्त नहीं हुआ। सेव मोड बंद कर दिया गया है।",
-                        reply_markup=ReplyKeyboardRemove()
-                    )
-                context.user_data["action"] = None
-                context.user_data["temp_msgs"] = []
-                return
-
-            msg = update.message
-            reply_markup_dict = msg.reply_markup.to_dict() if msg.reply_markup else None
-
-            msg_ref = {
-                "from_chat_id": msg.chat_id,
-                "message_id": msg.message_id,
-                "reply_markup": reply_markup_dict
-            }
-
-            context.user_data["temp_msgs"].append(msg_ref)
-            count = len(context.user_data["temp_msgs"])
-            await update.message.reply_text(f"📥 Message #{count} received! और भेजें या <b>✅ DONE</b> पर क्लिक करें।", parse_mode="HTML")
-
-        elif action == "wait_add_admin":
-            try:
-                new_admin = int(update.message.text.strip())
-                if new_admin not in data["admins"]:
-                    data["admins"].append(new_admin)
-                    save_data(bot_num, data)
-                    await update.message.reply_text(f"✅ Admin Added: {new_admin}")
-                else:
-                    await update.message.reply_text("⚠️ यह ID पहले से एडमिन है।")
-            except ValueError:
-                await update.message.reply_text("❌ कृपया सही Numeric User ID भेजें।")
-            context.user_data["action"] = None
-
-        elif action == "wait_rem_admin":
-            try:
-                rem_admin = int(update.message.text.strip())
-                if rem_admin == OWNER_ID:
-                    await update.message.reply_text("❌ Main Owner को नहीं हटाया जा सकता!")
-                elif rem_admin in data["admins"]:
-                    data["admins"].remove(rem_admin)
-                    save_data(bot_num, data)
-                    await update.message.reply_text(f"✅ Admin Removed: {rem_admin}")
-                else:
-                    await update.message.reply_text("⚠️ यह ID एडमिन लिस्ट में नहीं है।")
-            except ValueError:
-                await update.message.reply_text("❌ कृपया सही Numeric User ID भेजें।")
-            context.user_data["action"] = None
-
-        elif action == "wait_leave_link":
-            link = update.message.text.strip()
-            data["leave_link"] = link
+        elif action == "bc_save_new":
+            user_states[user_id] = {"bot_num": bot_num, "mode": "saving"}
+            data["saved_messages"] = [] # पुराना साफ करके नया जोड़ेंगे
             save_data(bot_num, data)
-            await update.message.reply_text(f"✅ Leave Link Saved: {link}")
-            context.user_data["action"] = None
+            
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✅ DONE", callback_data="save_done")]])
+            await callback_query.message.reply_text(
+                "📥 **Message Saving Mode Active!**\n\nअब आप जो भी मैसेज, फोटो, वीडियो या **प्रीमियम स्टीकर** भेजेंगे, वो सेव होता जाएगा। भेजने के बाद नीचे **DONE** पर क्लिक करें।",
+                reply_markup=keyboard
+            )
+            await callback_query.answer()
 
-        elif action == "wait_broadcast":
-            context.user_data["action"] = None
-            broadcast_msg = update.message
-            await update.message.reply_text("🚀 Broadcasting started...")
-            success = 0
-            failed = 0
-            for u in data["users"]:
-                try:
-                    await broadcast_msg.copy(chat_id=u)
-                    success += 1
-                except Exception:
-                    failed += 1
-            await update.message.reply_text(f"✅ Broadcast Complete!\n\nSuccess: {success}\nFailed: {failed}")
+        elif action == "save_done":
+            if user_id in user_states:
+                del user_states[user_id]
+            total = len(load_data(bot_num)["saved_messages"])
+            await callback_query.message.edit_text(f"✅ **{total} Messages/Stickers Saved Successfully!**")
 
-    async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text(f"🟢 Bot {bot_num} Active!\n\nAdmin Panel: /admin")
+        elif action == "set_link":
+            user_states[user_id] = {"bot_num": bot_num, "mode": "set_link"}
+            await callback_query.message.reply_text("🔗 कृपया नया लीव/ज्वाइन लिंक (URL) लिखकर भेजें:")
+            await callback_query.answer()
 
-    app.add_handler(ChatJoinRequestHandler(handle_join_request))
-    app.add_handler(ChatMemberHandler(handle_chat_member, ChatMemberHandler.CHAT_MEMBER))
-    app.add_handler(CommandHandler("admin", admin_cmd))
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CallbackQueryHandler(callback_handler))
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, message_collector_handler))
+        elif action == "add_admin":
+            user_states[user_id] = {"bot_num": bot_num, "mode": "add_admin"}
+            await callback_query.message.reply_text("➕ कृपया जिसे एडमिन बनाना है उसकी User ID लिखकर भेजें:")
+            await callback_query.answer()
+
+        elif action == "rem_admin":
+            user_states[user_id] = {"bot_num": bot_num, "mode": "rem_admin"}
+            await callback_query.message.reply_text("➖ कृपया जिसे हटाना है उस एडमिन की User ID लिखकर भेजें:")
+            await callback_query.answer()
+
+    # सामान्य टेक्स्ट/मीडिया हैंडलर (सेविंग और प्रीमियम स्टीकर सपोर्ट के लिए)
+    @app.on_message(filters.private & ~filters.command(["start", "admin", "broadcast", "setlink"]))
+    async def handle_user_input(client, message):
+        user_id = message.from_user.id
+        data = load_data(bot_num)
+
+        if user_id in data["admins"] and user_id in user_states:
+            state = user_states[user_id]
+            if state["bot_num"] == bot_num:
+                mode = state["mode"]
+
+                if mode == "saving":
+                    # मैसेज या प्रीमियम स्टीकर सेव करें
+                    data["saved_messages"].append({
+                        "chat_id": message.chat.id,
+                        "msg_id": message.id
+                    })
+                    save_data(bot_num, data)
+                    await message.reply_text(f"📦 Message # {len(data['saved_messages'])} received! और भेजें या नीचे DONE पर क्लिक करें।")
+                    return
+
+                elif mode == "set_link":
+                    new_link = message.text.strip()
+                    data["leave_link"] = new_link
+                    save_data(bot_num, data)
+                    del user_states[user_id]
+                    await message.reply_text(f"✅ Leave Link successfully updated to:\n`{new_link}`")
+                    return
+
+                elif mode == "add_admin":
+                    try:
+                        new_admin_id = int(message.text.strip())
+                        if new_admin_id not in data["admins"]:
+                            data["admins"].append(new_admin_id)
+                            save_data(bot_num, data)
+                        del user_states[user_id]
+                        await message.reply_text(f"✅ User `{new_admin_id}` added as admin successfully!")
+                    except ValueError:
+                        await message.reply_text("❌ Invalid ID! Please send a numeric User ID.")
+                    return
+
+                elif mode == "rem_admin":
+                    try:
+                        rem_id = int(message.text.strip())
+                        if rem_id == OWNER_ID:
+                            await message.reply_text("⚠️ Owner can't be removed!")
+                        elif rem_id in data["admins"]:
+                            data["admins"].remove(rem_id)
+                            save_data(bot_num, data)
+                            await message.reply_text(f"✅ Admin `{rem_id}` removed successfully!")
+                        else:
+                            await message.reply_text("❌ ID not found in admins.")
+                        del user_states[user_id]
+                    except ValueError:
+                        await message.reply_text("❌ Invalid ID!")
+                    return
 
     return app
 
-async def main_runner():
-    app1 = build_bot_app(TOKEN_BOT_1, 1)
-    app2 = build_bot_app(TOKEN_BOT_2, 2)
-    app3 = build_bot_app(TOKEN_BOT_3, 3)
+async def main():
+    try:
+        await start_web_server()
+        
+        app1 = create_bot_app(1, BOT_TOKENS[1])
+        app2 = create_bot_app(2, BOT_TOKENS[2])
+        app3 = create_bot_app(3, BOT_TOKENS[3])
 
-    await app1.initialize()
-    await app2.initialize()
-    await app3.initialize()
+        await app1.start()
+        await app2.start()
+        await app3.start()
 
-    await app1.start()
-    await app2.start()
-    await app3.start()
-
-    await app1.updater.start_polling(allowed_updates=["message", "chat_join_request", "chat_member", "callback_query"], drop_pending_updates=True)
-    await app2.updater.start_polling(allowed_updates=["message", "chat_join_request", "chat_member", "callback_query"], drop_pending_updates=True)
-    app3_polling = app3.updater.start_polling(allowed_updates=["message", "chat_join_request", "chat_member", "callback_query"], drop_pending_updates=True)
-    if asyncio.iscoroutine(app3_polling):
-        await app3_polling
-
-    logging.info("All 3 bots started successfully!")
-
-    # अनंत समय तक बोट को जिंदा रखने के लिए
-    while True:
-        await asyncio.sleep(3600)
+        logging.info("All 3 Bots Started Successfully with Admin Panel & Sticker Support!")
+        await asyncio.Event().wait()
+    except Exception as e:
+        logging.critical(f"Critical error in main: {e}", exc_info=True)
 
 if __name__ == "__main__":
-    # हेल्थ चेक सर्वर बैकग्राउंड में चलाना (Render के पोर्ट बाइंडिंग इश्यू से बचाने के लिए)
-    threading.Thread(target=run_health_check_server, daemon=True).start()
-    
     try:
-        asyncio.run(main_runner())
-    except (KeyboardInterrupt, SystemExit):
-        logging.info("Bots stopped gracefully.")
+        asyncio.run(main())
+    except Exception as e:
+        print(f"Fatal error: {e}")
