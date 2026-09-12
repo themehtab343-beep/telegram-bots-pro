@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -23,23 +22,21 @@ logging.basicConfig(
 # Common Admin ID
 ADMIN_ID = 8796084661
 DATA_FILE = "bot3_data.json"
-
-# Broadcast State Track करने के लिए
 BROADCAST_USERS = set()
 
-# नए टोकन्स यहाँ सेट कर दिए गए हैं
+# Tokens
 TOKEN_BOT_1 = "8950741154:AAHFel5umWqJdksC9NQ89hEE9sURQHH2Zys"
 TOKEN_BOT_2 = "8975139578:AAFaNj0-IoWo5AHjH8b1nDccTCT1lIXoCcE"
 TOKEN_BOT_3 = "8723910838:AAGDn-3HPeDMMIpjkpuKYgD152txrt1XgTA"
 
 # ==============================================================================
-# WEB SERVER (Hosting के लिए ताकि App बंद न हो)
+# WEB SERVER (Hosting के लिए)
 # ==============================================================================
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is active and running 24/7!")
+        self.wfile.write(b"All Bots are running 24/7!")
     def log_message(self, format, *args):
         return
 
@@ -88,7 +85,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p_count = len(data.get("pending_requests", []))
     auto_status = "🟢 ON" if data.get("auto_approve", False) else "🔴 OFF"
 
-    # रंग-बिरंगे और सुंदर Inline Buttons (No keyboard buttons)
     keyboard = [
         [InlineKeyboardButton("📢 Broadcast Message", callback_data="btn_broadcast")],
         [InlineKeyboardButton("📥 Save Message Info (/save)", callback_data="btn_save_info")],
@@ -120,11 +116,11 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     if action == "btn_broadcast":
         BROADCAST_USERS.add(ADMIN_ID)
         await query.answer()
-        await query.message.reply_text("📢 **Broadcast Mode On!**\n\nअब जो भी मैसेज (Text, Photo, Video आदि) आप यहाँ भेजेंगे, वह सभी यूजर्स को उनके बटन्स के साथ भेज दिया जाएगा।")
+        await query.message.reply_text("📢 **Broadcast Mode On!**\n\nअब जो भी मैसेज आप यहाँ भेजेंगे, वह सभी यूजर्स को उनके बटन्स के साथ भेज दिया जाएगा।")
 
     elif action == "btn_save_info":
         await query.answer()
-        await query.message.reply_text("💡 **Message Save karne ka tarika:**\nकिसी भी मैसेज (बटन वाले मैसेज सहित) पर रिप्लाई करके `/save` लिखें, वह सेव हो जाएगा।")
+        await query.message.reply_text("💡 **Message Save karne ka tarika:**\nकिसी भी मैसेज पर रिप्लाई करके `/save` लिखें, वह सेव हो जाएगा।")
 
     elif action == "btn_approve_all":
         pending = data.get("pending_requests", [])
@@ -197,7 +193,7 @@ async def save_message_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     data["saved_messages"].append(msg_data)
     save_data(data)
-    await update.message.reply_text(f"✅ **Message Saved Successfully!** Total saved: {len(data['saved_messages'])}\n(साथ में इसके बटन्स भी सेव हो गए हैं)")
+    await update.message.reply_text(f"✅ **Message Saved Successfully!** Total saved: {len(data['saved_messages'])}")
 
 async def clear_messages_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -207,7 +203,6 @@ async def clear_messages_command(update: Update, context: ContextTypes.DEFAULT_T
     save_data(data)
     await update.message.reply_text("🗑️ All saved messages cleared!")
 
-# Join Request Handler
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         request = update.chat_join_request
@@ -257,7 +252,6 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         logging.error(f"Join request error: {e}")
 
-# Broadcast Handler
 async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -288,41 +282,27 @@ async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(f"📢 **Broadcast Complete!**\n\n✅ Sent: {success}\n❌ Failed: {failed}")
 
 # ==============================================================================
-# BOT RUNNERS
+# MAIN APPLICATION (Single Thread / Webhook-free Polling Fix)
 # ==============================================================================
-def run_bot_1():
-    try:
-        app = Application.builder().token(TOKEN_BOT_1).build()
-        app.run_polling()
-    except Exception as e:
-        logging.error(f"Bot 1 error: {e}")
-
-def run_bot_2():
-    try:
-        app = Application.builder().token(TOKEN_BOT_2).build()
-        app.run_polling()
-    except Exception as e:
-        logging.error(f"Bot 2 error: {e}")
-
-def run_bot_3():
-    try:
-        app = Application.builder().token(TOKEN_BOT_3).build()
-        app.add_handler(CommandHandler("start", start_command))
-        app.add_handler(CommandHandler("admin", admin_command))
-        app.add_handler(CommandHandler("save", save_message_command))
-        app.add_handler(CommandHandler("clear_msgs", clear_messages_command))
-        app.add_handler(CallbackQueryHandler(admin_callback_handler))
-        app.add_handler(ChatJoinRequestHandler(handle_join_request))
-        app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_admin_broadcast))
-        app.run_polling()
-    except Exception as e:
-        logging.error(f"Bot 3 error: {e}")
-
 if __name__ == "__main__":
+    # Web server background में चालू रखने के लिए
+    import threading
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    threading.Thread(target=run_bot_1).start()
-    threading.Thread(target=run_bot_2).start()
-    threading.Thread(target=run_bot_3).start()
-
-    threading.Event().wait()
+    # चूंकि python-telegram-bot एक साथ कई टोकन सीधे एक एप में नहीं चला सकता,
+    # इसलिए हम Bot 3 (मेन एडमिन और चैनल ऑटोमेशन वाला बॉट) को मुख्य तौर पर चला रहे हैं।
+    # (अगर आपको Bot 1 और Bot 2 भी चलाने हैं, तो उन्हें अलग सर्विस पर डिप्लॉय करें, 
+    # Render फ्री टियर पर एक साथ एक फाइल में मल्टी-बॉट थ्रेडिंग एरर देता है)।
+    
+    app = Application.builder().token(TOKEN_BOT_3).build()
+    
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("admin", admin_command))
+    app.add_handler(CommandHandler("save", save_message_command))
+    app.add_handler(CommandHandler("clear_msgs", clear_messages_command))
+    app.add_handler(CallbackQueryHandler(admin_callback_handler))
+    app.add_handler(ChatJoinRequestHandler(handle_join_request))
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_admin_broadcast))
+    
+    logging.info("Bot 3 is starting polling...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
