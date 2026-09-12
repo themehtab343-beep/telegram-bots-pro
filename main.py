@@ -27,9 +27,10 @@ DATA_FILE = "bot3_data.json"
 # Broadcast State Track करने के लिए
 BROADCAST_USERS = set()
 
-TOKEN_BOT_1 = "8723910838:AAFfWtVYGMX23u1WeboqtCRdc_4oMEvz0jo"
-TOKEN_BOT_2 = "8796084661:AAGYHSa2u3dMG0aM6gQviG89Seolt1xi34c"
-TOKEN_BOT_3 = "8950741154:AAHXRNRR8iVqIo3BB1YqMaRrih-cOvljHaY"
+# नए टोकन्स यहाँ सेट कर दिए गए हैं
+TOKEN_BOT_1 = "8950741154:AAHFel5umWqJdksC9NQ89hEE9sURQHH2Zys"
+TOKEN_BOT_2 = "8975139578:AAFaNj0-IoWo5AHjH8b1nDccTCT1lIXoCcE"
+TOKEN_BOT_3 = "8723910838:AAGDn-3HPeDMMIpjkpuKYgD152txrt1XgTA"
 
 # ==============================================================================
 # WEB SERVER (Hosting के लिए ताकि App बंद न हो)
@@ -145,7 +146,6 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         data["auto_approve"] = not current
         save_data(data)
         
-        # Update Panel UI
         u_count = len(data.get("users", []))
         m_count = len(data.get("saved_messages", []))
         p_count = len(data.get("pending_requests", []))
@@ -179,7 +179,6 @@ async def save_message_command(update: Update, context: ContextTypes.DEFAULT_TYP
     data = load_data()
     msg_data = {}
 
-    # Inline Keyboard को भी साथ में कैप्चर करना (ताकि यूजर को भी वैसे ही बटन मिलें)
     reply_markup_dict = None
     if reply.reply_markup:
         reply_markup_dict = reply.reply_markup.to_dict()
@@ -208,7 +207,7 @@ async def clear_messages_command(update: Update, context: ContextTypes.DEFAULT_T
     save_data(data)
     await update.message.reply_text("🗑️ All saved messages cleared!")
 
-# Join Request Handler (Auto Approve & Saved Messages delivery with original buttons)
+# Join Request Handler
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         request = update.chat_join_request
@@ -221,22 +220,18 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         if user_id not in data["users"]:
             data["users"].append(user_id)
 
-        # Store pending request info
         req_info = {"user_id": user_id, "chat_id": chat_id}
         if req_info not in data["pending_requests"]:
             data["pending_requests"].append(req_info)
         
         save_data(data)
 
-        # Check Auto Approve
         if data.get("auto_approve", False):
             await context.bot.approve_chat_request(chat_id=chat_id, user_id=user_id)
-            # Remove from pending if auto-approved
             if req_info in data["pending_requests"]:
                 data["pending_requests"].remove(req_info)
                 save_data(data)
 
-        # Send saved messages to the user with original inline buttons
         saved_msgs = data.get("saved_messages", [])
         for item in saved_msgs:
             try:
@@ -262,7 +257,7 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         logging.error(f"Join request error: {e}")
 
-# Handle Broadcast text/media from Admin
+# Broadcast Handler
 async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
