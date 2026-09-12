@@ -24,18 +24,10 @@ logging.basicConfig(
 ADMIN_ID = 8796084661
 DATA_FILE = "bot3_data.json"
 BROADCAST_USERS = set()
+EDIT_STATE = set() # एडमिन के इनपुट स्टेट ट्रैक करने के लिए
 
 # Token (Bot 3)
 TOKEN_BOT_3 = "8723910838:AAGDn-3HPeDMMIpjkpuKYgD152txrt1XgTA"
-
-# ==============================================================================
-# USER REPLY KEYBOARD BUTTONS (यूजर के लिए नीचे दिखने वाले कीबोर्ड बटन्स और उनके जवाब)
-# ==============================================================================
-USER_KEYBOARD = [
-    [KeyboardButton("🎁 Claim Reward"), KeyboardButton("📢 Join Channel")],
-    [KeyboardButton("ℹ️ Help / Info"), KeyboardButton("📞 Support")]
-]
-user_reply_markup = ReplyKeyboardMarkup(USER_KEYBOARD, resize_keyboard=True)
 
 # ==============================================================================
 # WEB SERVER (Hosting के लिए)
@@ -60,13 +52,35 @@ def run_web_server():
 # DATA MANAGER
 # ==============================================================================
 def load_data():
+    default_data = {
+        "users": [],
+        "pending_requests": [],
+        "saved_messages": [],
+        "auto_approve": False,
+        "start_message": {
+            "type": "text",
+            "text": "👋 **Welcome!**\nनीचे दिए गए कीबोर्ड बटन्स का उपयोग करें:"
+        },
+        "keyboard_buttons": [
+            {"btn": "🎁 Claim Reward", "reply": "🎉 Your reward link: https://t.me/... (Yahan apna link daal le)"},
+            {"btn": "📢 Join Channel", "reply": "🔗 Join our main channel here: https://t.me/..._"},
+            {"btn": "ℹ️ Help / Info", "reply": "ℹ️ Ye bot join request automate karne aur updates bhejne ke liye hai."},
+            {"btn": "📞 Support", "reply": "💬 Contact Admin for support: @YourUsername"}
+        ]
+    }
+    
     if not os.path.exists(DATA_FILE):
-        return {"users": [], "pending_requests": [], "saved_messages": [], "auto_approve": False}
+        return default_data
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            # सुनिश्चित करें कि सभी कीज़ मौजूद हों
+            for key in default_data:
+                if key not in data:
+                    data[key] = default_data[key]
+            return data
     except:
-        return {"users": [], "pending_requests": [], "saved_messages": [], "auto_approve": False}
+        return default_data
 
 def save_data(data):
     try:
@@ -74,6 +88,19 @@ def save_data(data):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logging.error(f"Data save error: {e}")
+
+def get_user_keyboard(data):
+    kb_data = data.get("keyboard_buttons", [])
+    buttons = []
+    row = []
+    for item in kb_data:
+        row.append(KeyboardButton(item["btn"]))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 # ==============================================================================
 # HANDLERS: /start & USER KEYBOARD RESPONSES
@@ -86,12 +113,28 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data["users"].append(user_id)
         save_data(data)
 
-    await update.message.reply_text(
-        "👋 **Welcome!**\nनीचे दिए गए कीबोर्ड बटन्स का उपयोग करें:",
-        reply_markup=user_reply_markup
-    )
+    user_markup = get_user_keyboard(data)
+    
+    # 1. सेट किया गया /start वेलकम मैसेज भेजना
+    s_msg = data.get("start_message", {})
+    try:
+        m_type = s_msg.get("type", "text")
+        if m_type == "photo":
+            await context.bot.send_photo(chat_id=user_id, photo=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
+        elif m_type == "video":
+            await context.bot.send_video(chat_id=user_id, video=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
+        elif m_type == "voice":
+            await context.bot.send_voice(chat_id=user_id, voice=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
+        elif m_type == "audio":
+            await context.bot.send_audio(chat_id=user_id, audio=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
+        elif m_type == "document":
+            await context.bot.send_document(chat_id=user_id, document=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
+        else:
+            await context.bot.send_message(chat_id=user_id, text=s_msg.get("text", "Welcome!"), reply_markup=user_markup)
+    except Exception as e:
+        await context.bot.send_message(chat_id=user_id, text="👋 Welcome!", reply_markup=user_markup)
 
-    # सेव किए गए मैसेज भेजना
+    # 2. सेव किए गए अन्य मैसेज भेजना
     saved_msgs = data.get("saved_messages", [])
     for item in saved_msgs:
         try:
@@ -117,23 +160,26 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logging.error(f"Error sending saved msg: {e}")
 
-# जब यूजर कीबोर्ड बटन पर क्लिक करेगा तो क्या रिप्लाई जाएगा
 async def handle_user_keyboard_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id == ADMIN_ID and ADMIN_ID in BROADCAST_USERS:
-        return # अगर ब्रॉडकास्ट मोड ऑन है तो एडमिन के मैसेज हैंडल होंगे
+    user_id = update.effective_user.id
+    if user_id == ADMIN_ID:
+        if ADMIN_ID in BROADCAST_USERS:
+            return # ब्रॉडकास्ट मोड चालू है
+        if ADMIN_ID in EDIT_STATE:
+            return # एडमिन कुछ एडिट कर रहा है
 
     text = update.message.text
-    if text == "🎁 Claim Reward":
-        await update.message.reply_text("🎉 Your reward link: https://t.me/... (Yahan apna link daal le)", reply_markup=user_reply_markup)
-    elif text == "📢 Join Channel":
-        await update.message.reply_text("🔗 Join our main channel here: https://t.me/...", reply_markup=user_reply_markup)
-    elif text == "ℹ️ Help / Info":
-        await update.message.reply_text("ℹ️ Ye bot join request automate karne aur updates bhejne ke liye hai.", reply_markup=user_reply_markup)
-    elif text == "📞 Support":
-        await update.message.reply_text("💬 Contact Admin for support: @YourUsername", reply_markup=user_reply_markup)
+    data = load_data()
+    user_markup = get_user_keyboard(data)
+
+    # चेक करें कि क्या क्लिक किया गया बटन डेटाबेस में है
+    for item in data.get("keyboard_buttons", []):
+        if text == item["btn"]:
+            await update.message.reply_text(item["reply"], reply_markup=user_markup)
+            return
 
 # ==============================================================================
-# ADMIN PANEL (Colorful Inline Buttons)
+# ADMIN PANEL (Colorful Inline Buttons & Full Management)
 # ==============================================================================
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -146,13 +192,14 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p_count = len(data.get("pending_requests", []))
     auto_status = "🟢 ON" if data.get("auto_approve", False) else "🔴 OFF"
 
-    # कलरफुल इमोजी वाले इनलाइन बटन्स
     keyboard = [
         [InlineKeyboardButton("🔵 📢 Broadcast Message", callback_data="btn_broadcast")],
-        [InlineKeyboardButton("🟡 📥 Save Message Info (/save)", callback_data="btn_save_info")],
-        [InlineKeyboardButton(f"🟢 ✅ Approve All Pending Requests ({p_count})", callback_data="btn_approve_all")],
-        [InlineKeyboardButton(f"🟣 🔄 Auto-Approve Mode: {auto_status}", callback_data="btn_toggle_auto")],
-        [InlineKeyboardButton("🔴 🗑️ Delete All Saved Messages", callback_data="btn_delete_all")]
+        [InlineKeyboardButton("🟡 📥 Save Media/Msg (/save)", callback_data="btn_save_info")],
+        [InlineKeyboardButton("🟢 ⚙️ Set /start Welcome Msg", callback_data="btn_set_start")],
+        [InlineKeyboardButton("🟣 ⌨️ Edit Keyboard Buttons & Replies", callback_data="btn_edit_kb")],
+        [InlineKeyboardButton(f"🟠 ✅ Approve All Requests ({p_count})", callback_data="btn_approve_all")],
+        [InlineKeyboardButton(f"🩵 🔄 Auto-Approve: {auto_status}", callback_data="btn_toggle_auto")],
+        [InlineKeyboardButton("🔴 🗑️ Delete All Saved Msgs", callback_data="btn_delete_all")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -161,7 +208,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👥 Total Users: `{u_count}`\n"
         f"📦 Saved Messages: `{m_count}`\n"
         f"⏳ Pending Requests: `{p_count}`\n\n"
-        f"नीचे दिए गए कलरफुल बटन्स का उपयोग करें:",
+        f"नीचे दिए गए विकल्पों में से चुनें:",
         parse_mode="Markdown",
         reply_markup=reply_markup
     )
@@ -183,6 +230,19 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif action == "btn_save_info":
         await query.answer()
         await query.message.reply_text("💡 किसी भी मैसेज (वॉयस, फोटो या टेक्स्ट) पर रिप्लाई करके `/save` लिखें, वह सेव हो जाएगा।")
+
+    elif action == "btn_set_start":
+        await query.answer()
+        await query.message.reply_text("💡 **Welcome Message सेट करने का तरीका:**\nजो मैसेज (फोटो, वीडियो, वॉइस या टेक्स्ट) आप `/start` पर रखना चाहते हैं, उस पर Reply करके `/setstart` लिखें।")
+
+    elif action == "btn_edit_kb":
+        await query.answer()
+        kb_list = data.get("keyboard_buttons", [])
+        text = "⌨️ **Current Keyboard Buttons & Replies:**\n\n"
+        for i, kb in enumerate(kb_list, 1):
+            text += f"{i}. **Button:** `{kb['btn']}`\n   **Reply:** `{kb['reply']}`\n\n"
+        text += "✏️ इन्हें बदलने के लिए इस फॉर्मेट में लिखकर भेजें:\n`/editkb [बटन नंबर] | [नया बटन नाम] | [नया रिप्लाई]`\n\nउदाहरण:\n`/editkb 1 | 🎁 Check Bonus | ये रहा आपका बोनस लिंक: ...`"
+        await query.message.reply_text(text, parse_mode="Markdown")
 
     elif action == "btn_approve_all":
         pending = data.get("pending_requests", [])
@@ -210,10 +270,12 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
         keyboard = [
             [InlineKeyboardButton("🔵 📢 Broadcast Message", callback_data="btn_broadcast")],
-            [InlineKeyboardButton("🟡 📥 Save Message Info (/save)", callback_data="btn_save_info")],
-            [InlineKeyboardButton(f"🟢 ✅ Approve All Pending Requests ({p_count})", callback_data="btn_approve_all")],
-            [InlineKeyboardButton(f"🟣 🔄 Auto-Approve Mode: {auto_status}", callback_data="btn_toggle_auto")],
-            [InlineKeyboardButton("🔴 🗑️ Delete All Saved Messages", callback_data="btn_delete_all")]
+            [InlineKeyboardButton("🟡 📥 Save Media/Msg (/save)", callback_data="btn_save_info")],
+            [InlineKeyboardButton("🟢 ⚙️ Set /start Welcome Msg", callback_data="btn_set_start")],
+            [InlineKeyboardButton("🟣 ⌨️ Edit Keyboard Buttons & Replies", callback_data="btn_edit_kb")],
+            [InlineKeyboardButton(f"🟠 ✅ Approve All Requests ({p_count})", callback_data="btn_approve_all")],
+            [InlineKeyboardButton(f"🩵 🔄 Auto-Approve: {auto_status}", callback_data="btn_toggle_auto")],
+            [InlineKeyboardButton("🔴 🗑️ Delete All Saved Msgs", callback_data="btn_delete_all")]
         ]
         await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
         await query.answer(f"Auto-Approve is now {auto_status}", show_alert=True)
@@ -223,6 +285,69 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         save_data(data)
         await query.answer("🗑️ All saved messages deleted!", show_alert=True)
         await query.message.reply_text("🗑️ सभी सेव किए गए मैसेज डिलीट कर दिए गए हैं।")
+
+# ==============================================================================
+# ADMIN CUSTOM COMMANDS (/setstart & /editkb)
+# ==============================================================================
+async def set_start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    reply = update.message.reply_to_message
+    if not reply:
+        await update.message.reply_text("❌ किसी मैसेज (फोटो, वीडियो, वॉइस या टेक्स्ट) पर Reply करके `/setstart` लिखें।")
+        return
+
+    data = load_data()
+    start_data = {}
+    reply_markup_dict = reply.reply_markup.to_dict() if reply.reply_markup else None
+
+    if reply.photo:
+        start_data = {"type": "photo", "file_id": reply.photo[-1].file_id, "caption": reply.caption or "", "reply_markup": reply_markup_dict}
+    elif reply.video:
+        start_data = {"type": "video", "file_id": reply.video.file_id, "caption": reply.caption or "", "reply_markup": reply_markup_dict}
+    elif reply.voice:
+        start_data = {"type": "voice", "file_id": reply.voice.file_id, "caption": reply.caption or "", "reply_markup": reply_markup_dict}
+    elif reply.audio:
+        start_data = {"type": "audio", "file_id": reply.audio.file_id, "caption": reply.caption or "", "reply_markup": reply_markup_dict}
+    elif reply.document:
+        start_data = {"type": "document", "file_id": reply.document.file_id, "caption": reply.caption or "", "reply_markup": reply_markup_dict}
+    elif reply.text:
+        start_data = {"type": "text", "text": reply.text, "reply_markup": reply_markup_dict}
+    else:
+        await update.message.reply_text("❌ Unsupported message type!")
+        return
+
+    data["start_message"] = start_data
+    save_data(data)
+    await update.message.reply_text("✅ **New /start Welcome Message Set Successfully!**")
+
+async def edit_keyboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    text = update.message.text
+    # कमांड हटाकर बाकी हिस्सा लें
+    try:
+        parts = text.replace("/editkb", "").split("|")
+        if len(parts) < 3:
+            await update.message.reply_text("❌ गलत फॉर्मेट! इस तरह भेजें:\n`/editkb 1 | बटन नाम | रिप्लाई मैसेज`", parse_mode="Markdown")
+            return
+        
+        index = int(parts[0].strip()) - 1
+        new_btn = parts[1].strip()
+        new_reply = parts[2].strip()
+
+        data = load_data()
+        if 0 <= index < len(data["keyboard_buttons"]):
+            data["keyboard_buttons"][index]["btn"] = new_btn
+            data["keyboard_buttons"][index]["reply"] = new_reply
+            save_data(data)
+            await update.message.reply_text(f"✅ **Keyboard Button #{index+1} Updated Successfully!**\n\nButton: `{new_btn}`\nReply: `{new_reply}`", parse_mode="Markdown", reply_markup=get_user_keyboard(data))
+        else:
+            await update.message.reply_text("❌ अमान्य बटन नंबर! सही नंबर चुनें।")
+    except Exception as e:
+        await update.message.reply_text(f"❌ एरर: कृपया सही फॉर्मेट का उपयोग करें।\n`/editkb 1 | बटन नाम | रिप्लाई मैसेज`")
 
 # ==============================================================================
 # SAVE MESSAGE COMMAND (Voice, Audio, Photo, Video, Text सब सेव करेगा)
@@ -293,13 +418,28 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
                 data["pending_requests"].remove(req_info)
                 save_data(data)
 
-        # यूजर को कीबोर्ड बटन्स और सेव मैसेज भेजना
-        await context.bot.send_message(
-            chat_id=user_id,
-            text="👋 **Welcome!** आपकी रिक्वेस्ट स्वीकार कर ली गई है। नीचे दिए गए बटन्स का उपयोग करें:",
-            reply_markup=user_reply_markup
-        )
+        user_markup = get_user_keyboard(data)
 
+        # 1. /start वेलकम मैसेज भेजना
+        s_msg = data.get("start_message", {})
+        try:
+            m_type = s_msg.get("type", "text")
+            if m_type == "photo":
+                await context.bot.send_photo(chat_id=user_id, photo=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
+            elif m_type == "video":
+                await context.bot.send_video(chat_id=user_id, video=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
+            elif m_type == "voice":
+                await context.bot.send_voice(chat_id=user_id, voice=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
+            elif m_type == "audio":
+                await context.bot.send_audio(chat_id=user_id, audio=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
+            elif m_type == "document":
+                await context.bot.send_document(chat_id=user_id, document=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
+            else:
+                await context.bot.send_message(chat_id=user_id, text=s_msg.get("text", "Welcome!"), reply_markup=user_markup)
+        except:
+            await context.bot.send_message(chat_id=user_id, text="👋 Welcome!", reply_markup=user_markup)
+
+        # 2. सेव किए गए अन्य मैसेज भेजना
         saved_msgs = data.get("saved_messages", [])
         for item in saved_msgs:
             try:
@@ -351,7 +491,7 @@ async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_T
                 elif reply.video:
                     await context.bot.send_video(chat_id=uid, video=reply.video.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
                 elif reply.voice:
-                    await context.bot.send_voice(chat_id=uid, voice=reply.voice.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
+                    await context.bot.send_voice(chat_id=uid, video=reply.voice.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
                 elif reply.audio:
                     await context.bot.send_audio(chat_id=uid, audio=reply.audio.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
                 elif reply.document:
@@ -375,6 +515,8 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CommandHandler("save", save_message_command))
+    app.add_handler(CommandHandler("setstart", set_start_command))
+    app.add_handler(CommandHandler("editkb", edit_keyboard_command))
     app.add_handler(CommandHandler("clear_msgs", clear_messages_command))
     app.add_handler(CallbackQueryHandler(admin_callback_handler))
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
