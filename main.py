@@ -109,7 +109,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_markup = get_user_keyboard(data)
     
-    # 1. सेव किए गए सभी मैसेज (3/4 जितने भी हैं) उनके अपने इनलाइन बटन्स के साथ भेजना
+    # 1. सेव किए गए सभी मैसेज उनके अपने इनलाइन बटन्स के साथ भेजना
     saved_msgs = data.get("saved_messages", [])
     for item in saved_msgs:
         try:
@@ -125,7 +125,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif m_type == "video":
                 await context.bot.send_video(chat_id=user_id, video=file_id, caption=caption, reply_markup=markup)
             elif m_type == "voice":
-                await context.bot.send_voice(chat_id=user_id, voice=file_id, caption=caption, reply_markup=markup)
+                await context.bot.send_voice(chat_id=user_id, video=file_id, caption=caption, reply_markup=markup)
             elif m_type == "audio":
                 await context.bot.send_audio(chat_id=user_id, audio=file_id, caption=caption, reply_markup=markup)
             elif m_type == "document":
@@ -184,7 +184,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"⚙️ **[Admin Control Panel]**\n\n"
         f"👥 Total Users: `{u_count}`\n"
-        f"📦 Saved Messages: `{m_count}` (यह सब /start पर एक के बाद एक जाएंगे)\n"
+        f"📦 Saved Messages: `{m_count}`\n"
         f"⏳ Pending Requests: `{p_count}`\n\n"
         f"नीचे दिए गए विकल्पों में से चुनें:",
         parse_mode="Markdown",
@@ -207,7 +207,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif action == "btn_save_info":
         await query.answer()
-        await query.message.reply_text("💡 **मैसेज सेव करने का तरीका:**\nजो भी मैसेज (इनलाइन बटन के साथ, फोटो, वीडियो, वॉइस या टेक्स्ट) आप `/start` पर दिखाना चाहते हैं, उस पर Reply करके `/save` लिखें। आप 3-4 या जितने चाहें मैसेज सेव कर सकते हैं, सब लाइन से जाएंगे।")
+        await query.message.reply_text("💡 **मैसेज सेव करने का तरीका:**\nजो भी मैसेज आप `/start` पर दिखाना चाहते हैं, उस पर Reply करके `/save` लिखें।")
 
     elif action == "btn_edit_kb":
         await query.answer()
@@ -294,7 +294,7 @@ async def save_message_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     reply = update.message.reply_to_message
     if not reply:
-        await update.message.reply_text("❌ किसी भी मैसेज (इनलाइन बटन वाले, फोटो, वीडियो, वॉइस आदि) पर Reply करके `/save` लिखें।")
+        await update.message.reply_text("❌ किसी भी मैसेज पर Reply करके `/save` लिखें।")
         return
 
     data = load_data()
@@ -319,7 +319,7 @@ async def save_message_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     data["saved_messages"].append(msg_data)
     save_data(data)
-    await update.message.reply_text(f"✅ **Message Saved Successfully with Inline Buttons!**\nTotal saved messages for /start: {len(data['saved_messages'])}")
+    await update.message.reply_text(f"✅ **Message Saved Successfully!**\nTotal saved messages: {len(data['saved_messages'])}")
 
 async def clear_messages_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -372,7 +372,7 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
                 elif m_type == "video":
                     await context.bot.send_video(chat_id=user_id, video=file_id, caption=caption, reply_markup=markup)
                 elif m_type == "voice":
-                    await context.bot.send_voice(chat_id=user_id, voice=file_id, caption=caption, reply_markup=markup)
+                    await context.bot.send_voice(chat_id=user_id, video=file_id, caption=caption, reply_markup=markup)
                 elif m_type == "audio":
                     await context.bot.send_audio(chat_id=user_id, audio=file_id, caption=caption, reply_markup=markup)
                 elif m_type == "document":
@@ -415,7 +415,7 @@ async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_T
                 elif reply.video:
                     await context.bot.send_video(chat_id=uid, video=reply.video.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
                 elif reply.voice:
-                    await context.bot.send_voice(chat_id=uid, voice=reply.voice.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
+                    await context.bot.send_voice(chat_id=uid, video=reply.voice.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
                 elif reply.audio:
                     await context.bot.send_audio(chat_id=uid, audio=reply.audio.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
                 elif reply.document:
