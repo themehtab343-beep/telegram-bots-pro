@@ -3,12 +3,15 @@ import json
 import logging
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ChatJoinRequestHandler,
     ContextTypes,
-    ChatJoinRequestHandler
+    filters
 )
 
 # Logging Setup
@@ -19,214 +22,312 @@ logging.basicConfig(
 
 # Common Admin ID
 ADMIN_ID = 8796084661
+DATA_FILE = "bot3_data.json"
 
-# ==============================================================================
-# BOT TOKENS
-# ==============================================================================
+# Broadcast State Track करने के लिए
+BROADCAST_USERS = set()
+
 TOKEN_BOT_1 = "8723910838:AAFfWtVYGMX23u1WeboqtCRdc_4oMEvz0jo"
 TOKEN_BOT_2 = "8796084661:AAGYHSa2u3dMG0aM6gQviG89Seolt1xi34c"
 TOKEN_BOT_3 = "8950741154:AAHXRNRR8iVqIo3BB1YqMaRrih-cOvljHaY"
 
 # ==============================================================================
-# LIGHTWEIGHT WEB SERVER (Hosting के लिए ताकि Exit 1 न आए)
+# WEB SERVER (Hosting के लिए ताकि App बंद न हो)
 # ==============================================================================
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bots are running 24/7 successfully!")
-
+        self.wfile.write(b"Bot is active and running 24/7!")
     def log_message(self, format, *args):
-        #ालतू HTTP logs को छिपाने के लिए ताकि कंसोल साफ़ रहे
         return
 
 def run_web_server():
     try:
         port = int(os.environ.get("PORT", 8080))
         server = HTTPServer(("0.0.0.0", port), SimpleHandler)
-        logging.info(f"Web server started on port {port}")
         server.serve_forever()
     except Exception as e:
         logging.error(f"Web server error: {e}")
 
 # ==============================================================================
-# BOT 3 DATA MANAGER (Isolated File: bot3_data.json)
+# DATA MANAGER
 # ==============================================================================
-DATA_FILE_3 = "bot3_data.json"
-
-def load_data_3():
-    if not os.path.exists(DATA_FILE_3):
-        return {"users": [], "saved_messages": []}
+def load_data():
+    if not os.path.exists(DATA_FILE):
+        return {"users": [], "pending_requests": [], "saved_messages": [], "auto_approve": False}
     try:
-        with open(DATA_FILE_3, "r", encoding="utf-8") as f:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
-        return {"users": [], "saved_messages": []}
+    except:
+        return {"users": [], "pending_requests": [], "saved_messages": [], "auto_approve": False}
 
-def save_data_3(data):
+def save_data(data):
     try:
-        with open(DATA_FILE_3, "w", encoding="utf-8") as f:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logging.error(f"Error saving data: {e}")
+        logging.error(f"Data save error: {e}")
 
 # ==============================================================================
-# BOT 3 HANDLERS
+# BOT 3 HANDLERS & INLINE ADMIN PANEL
 # ==============================================================================
 
-async def handle_join_request_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        request = update.chat_join_request
-        user = request.from_user
-        user_id = user.id
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🟢 **Bot 3 is Active!**\n\nType /admin to open the Admin Panel.")
 
-        data = load_data_3()
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ You are not authorized!")
+        return
+    
+    data = load_data()
+    u_count = len(data.get("users", []))
+    m_count = len(data.get("saved_messages", []))
+    p_count = len(data.get("pending_requests", []))
+    auto_status = "🟢 ON" if data.get("auto_approve", False) else "🔴 OFF"
 
-        if user_id not in data["users"]:
-            data["users"].append(user_id)
-            save_data_3(data)
+    # रंग-बिरंगे और सुंदर Inline Buttons (No keyboard buttons)
+    keyboard = [
+        [InlineKeyboardButton("📢 Broadcast Message", callback_data="btn_broadcast")],
+        [InlineKeyboardButton("📥 Save Message Info (/save)", callback_data="btn_save_info")],
+        [InlineKeyboardButton(f"✅ Approve All Pending Requests ({p_count})", callback_data="btn_approve_all")],
+        [InlineKeyboardButton(f"🔄 Auto-Approve Mode: {auto_status}", callback_data="btn_toggle_auto")],
+        [InlineKeyboardButton("🗑️ Delete All Saved Messages", callback_data="btn_delete_all")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Admin Alert
-        try:
-            await context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=f"🚨 <b>[Bot 3] New Join Request!</b>\n👤 <b>Name:</b> {user.first_name}\n🆔 <b>User ID:</b> <code>{user_id}</code>",
-                parse_mode="HTML"
-            )
-        except Exception as e:
-            logging.error(f"Failed to alert admin: {e}")
+    await update.message.reply_text(
+        f"⚙️ **[Admin Control Panel]**\n\n"
+        f"👥 Total Users: `{u_count}`\n"
+        f"📦 Saved Messages: `{m_count}`\n"
+        f"⏳ Pending Join Requests: `{p_count}`\n\n"
+        f"नीचे दिए गए बटन्स का उपयोग करें:",
+        parse_mode="Markdown",
+        reply_markup=reply_markup
+    )
 
-        # Send Saved Messages to User
-        saved_msgs = data.get("saved_messages", [])
-        for idx, item in enumerate(saved_msgs):
+async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer("❌ Unauthorized!", show_alert=True)
+        return
+
+    data = load_data()
+    action = query.data
+
+    if action == "btn_broadcast":
+        BROADCAST_USERS.add(ADMIN_ID)
+        await query.answer()
+        await query.message.reply_text("📢 **Broadcast Mode On!**\n\nअब जो भी मैसेज (Text, Photo, Video आदि) आप यहाँ भेजेंगे, वह सभी यूजर्स को उनके बटन्स के साथ भेज दिया जाएगा।")
+
+    elif action == "btn_save_info":
+        await query.answer()
+        await query.message.reply_text("💡 **Message Save karne ka tarika:**\nकिसी भी मैसेज (बटन वाले मैसेज सहित) पर रिप्लाई करके `/save` लिखें, वह सेव हो जाएगा।")
+
+    elif action == "btn_approve_all":
+        pending = data.get("pending_requests", [])
+        success_count = 0
+        for req in pending:
             try:
-                sent_msg = None
-                msg_type = item.get("type")
-                file_id = item.get("file_id")
-                caption = item.get("caption", "")
-
-                if msg_type == "photo":
-                    sent_msg = await context.bot.send_photo(chat_id=user_id, photo=file_id, caption=caption)
-                elif msg_type == "video":
-                    sent_msg = await context.bot.send_video(chat_id=user_id, video=file_id, caption=caption)
-                elif msg_type == "voice":
-                    sent_msg = await context.bot.send_voice(chat_id=user_id, voice=file_id, caption=caption)
-                elif msg_type == "audio":
-                    sent_msg = await context.bot.send_audio(chat_id=user_id, audio=file_id, caption=caption)
-                elif msg_type == "document":
-                    sent_msg = await context.bot.send_document(chat_id=user_id, document=file_id, caption=caption)
-                else:
-                    sent_msg = await context.bot.send_message(chat_id=user_id, text=item.get("text", ""))
-
-                # Auto-Pin Second Message (Index 1)
-                if idx == 1 and sent_msg:
-                    await context.bot.pin_chat_message(
-                        chat_id=user_id,
-                        message_id=sent_msg.message_id,
-                        disable_notification=False
-                    )
+                await context.bot.approve_chat_request(chat_id=req["chat_id"], user_id=req["user_id"])
+                success_count += 1
             except Exception as e:
-                logging.error(f"Error sending message to {user_id}: {e}")
-    except Exception as e:
-        logging.error(f"Join request error: {e}")
+                logging.error(f"Approve error: {e}")
+        
+        data["pending_requests"] = []
+        save_data(data)
+        await query.answer(f"✅ {success_count} requests approved!", show_alert=True)
+        await query.message.edit_text(f"✅ Successfully approved {success_count} requests! Panel refreshed.")
 
-async def start_command_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🟢 <b>[Bot 3] Active & Ready 24/7!</b>\n\nAdmin Control: /admin", parse_mode="HTML")
+    elif action == "btn_toggle_auto":
+        current = data.get("auto_approve", False)
+        data["auto_approve"] = not current
+        save_data(data)
+        
+        # Update Panel UI
+        u_count = len(data.get("users", []))
+        m_count = len(data.get("saved_messages", []))
+        p_count = len(data.get("pending_requests", []))
+        auto_status = "🟢 ON" if data["auto_approve"] else "🔴 OFF"
 
-async def save_command_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
+        keyboard = [
+            [InlineKeyboardButton("📢 Broadcast Message", callback_data="btn_broadcast")],
+            [InlineKeyboardButton("📥 Save Message Info (/save)", callback_data="btn_save_info")],
+            [InlineKeyboardButton(f"✅ Approve All Pending Requests ({p_count})", callback_data="btn_approve_all")],
+            [InlineKeyboardButton(f"🔄 Auto-Approve Mode: {auto_status}", callback_data="btn_toggle_auto")],
+            [InlineKeyboardButton("🗑️ Delete All Saved Messages", callback_data="btn_delete_all")]
+        ]
+        await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.answer(f"Auto-Approve is now {auto_status}", show_alert=True)
+
+    elif action == "btn_delete_all":
+        data["saved_messages"] = []
+        save_data(data)
+        await query.answer("🗑️ All saved messages deleted!", show_alert=True)
+        await query.message.reply_text("🗑️ सभी सेव किए गए मैसेज डिलीट कर दिए गए हैं।")
+
+async def save_message_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
         return
 
     reply = update.message.reply_to_message
     if not reply:
-        await update.message.reply_text("❌ Reply to a message with /save to store it for Bot 3.")
+        await update.message.reply_text("❌ किसी मैसेज पर Reply करके `/save` लिखें।")
         return
 
-    data = load_data_3()
+    data = load_data()
     msg_data = {}
 
+    # Inline Keyboard को भी साथ में कैप्चर करना (ताकि यूजर को भी वैसे ही बटन मिलें)
+    reply_markup_dict = None
+    if reply.reply_markup:
+        reply_markup_dict = reply.reply_markup.to_dict()
+
     if reply.photo:
-        msg_data = {"type": "photo", "file_id": reply.photo[-1].file_id, "caption": reply.caption or ""}
+        msg_data = {"type": "photo", "file_id": reply.photo[-1].file_id, "caption": reply.caption or "", "reply_markup": reply_markup_dict}
     elif reply.video:
-        msg_data = {"type": "video", "file_id": reply.video.file_id, "caption": reply.caption or ""}
-    elif reply.voice:
-        msg_data = {"type": "voice", "file_id": reply.voice.file_id, "caption": reply.caption or ""}
-    elif reply.audio:
-        msg_data = {"type": "audio", "file_id": reply.audio.file_id, "caption": reply.caption or ""}
+        msg_data = {"type": "video", "file_id": reply.video.file_id, "caption": reply.caption or "", "reply_markup": reply_markup_dict}
     elif reply.document:
-        msg_data = {"type": "document", "file_id": reply.document.file_id, "caption": reply.caption or ""}
+        msg_data = {"type": "document", "file_id": reply.document.file_id, "caption": reply.caption or "", "reply_markup": reply_markup_dict}
     elif reply.text:
-        msg_data = {"type": "text", "text": reply.text}
+        msg_data = {"type": "text", "text": reply.text, "reply_markup": reply_markup_dict}
+    else:
+        await update.message.reply_text("❌ Ye message type supported nahi hai!")
+        return
 
     data["saved_messages"].append(msg_data)
-    save_data_3(data)
-    await update.message.reply_text(f"✅ <b>Message Saved for Bot 3!</b> Total: {len(data['saved_messages'])}", parse_mode="HTML")
+    save_data(data)
+    await update.message.reply_text(f"✅ **Message Saved Successfully!** Total saved: {len(data['saved_messages'])}\n(साथ में इसके बटन्स भी सेव हो गए हैं)")
 
-async def clear_command_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def clear_messages_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    data = load_data_3()
+    data = load_data()
     data["saved_messages"] = []
-    save_data_3(data)
-    await update.message.reply_text("🗑️ All saved messages cleared for Bot 3!")
+    save_data(data)
+    await update.message.reply_text("🗑️ All saved messages cleared!")
 
-async def admin_command_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Join Request Handler (Auto Approve & Saved Messages delivery with original buttons)
+async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        request = update.chat_join_request
+        user = request.from_user
+        user_id = user.id
+        chat_id = request.chat.id
+
+        data = load_data()
+        
+        if user_id not in data["users"]:
+            data["users"].append(user_id)
+
+        # Store pending request info
+        req_info = {"user_id": user_id, "chat_id": chat_id}
+        if req_info not in data["pending_requests"]:
+            data["pending_requests"].append(req_info)
+        
+        save_data(data)
+
+        # Check Auto Approve
+        if data.get("auto_approve", False):
+            await context.bot.approve_chat_request(chat_id=chat_id, user_id=user_id)
+            # Remove from pending if auto-approved
+            if req_info in data["pending_requests"]:
+                data["pending_requests"].remove(req_info)
+                save_data(data)
+
+        # Send saved messages to the user with original inline buttons
+        saved_msgs = data.get("saved_messages", [])
+        for item in saved_msgs:
+            try:
+                m_type = item.get("type")
+                file_id = item.get("file_id")
+                caption = item.get("caption", "")
+                text = item.get("text", "")
+                markup_dict = item.get("reply_markup")
+                
+                markup = InlineKeyboardMarkup.de_json(markup_dict, context.bot) if markup_dict else None
+
+                if m_type == "photo":
+                    await context.bot.send_photo(chat_id=user_id, photo=file_id, caption=caption, reply_markup=markup)
+                elif m_type == "video":
+                    await context.bot.send_video(chat_id=user_id, video=file_id, caption=caption, reply_markup=markup)
+                elif m_type == "document":
+                    await context.bot.send_document(chat_id=user_id, document=file_id, caption=caption, reply_markup=markup)
+                else:
+                    await context.bot.send_message(chat_id=user_id, text=text, reply_markup=markup)
+            except Exception as e:
+                logging.error(f"Error sending message to user {user_id}: {e}")
+
+    except Exception as e:
+        logging.error(f"Join request error: {e}")
+
+# Handle Broadcast text/media from Admin
+async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    data = load_data_3()
-    u_count = len(data.get("users", []))
-    m_count = len(data.get("saved_messages", []))
-    await update.message.reply_text(
-        f"⚙️ <b>[Bot 3 Admin Panel]</b>\n\n👥 Total Users: <code>{u_count}</code>\n📦 Saved Messages: <code>{m_count}</code>\n\nCommands:\n/save - Reply to save message\n/clear_msgs - Reset saved messages",
-        parse_mode="HTML"
-    )
+
+    if ADMIN_ID in BROADCAST_USERS:
+        BROADCAST_USERS.remove(ADMIN_ID)
+        data = load_data()
+        users = data.get("users", [])
+        
+        success = 0
+        failed = 0
+        
+        reply = update.message
+        for uid in users:
+            try:
+                if reply.photo:
+                    await context.bot.send_photo(chat_id=uid, photo=reply.photo[-1].file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
+                elif reply.video:
+                    await context.bot.send_video(chat_id=uid, video=reply.video.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
+                elif reply.document:
+                    await context.bot.send_document(chat_id=uid, document=reply.document.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
+                else:
+                    await context.bot.send_message(chat_id=uid, text=reply.text or "", reply_markup=reply.reply_markup)
+                success += 1
+            except Exception:
+                failed += 1
+
+        await update.message.reply_text(f"📢 **Broadcast Complete!**\n\n✅ Sent: {success}\n❌ Failed: {failed}")
 
 # ==============================================================================
-# BOT RUNNERS (Safe with Try-Except)
+# BOT RUNNERS
 # ==============================================================================
-
 def run_bot_1():
     try:
-        app1 = Application.builder().token(TOKEN_BOT_1).build()
-        app1.run_polling()
+        app = Application.builder().token(TOKEN_BOT_1).build()
+        app.run_polling()
     except Exception as e:
-        logging.error(f"Bot 1 failed to start: {e}")
+        logging.error(f"Bot 1 error: {e}")
 
 def run_bot_2():
     try:
-        app2 = Application.builder().token(TOKEN_BOT_2).build()
-        app2.run_polling()
+        app = Application.builder().token(TOKEN_BOT_2).build()
+        app.run_polling()
     except Exception as e:
-        logging.error(f"Bot 2 failed to start: {e}")
+        logging.error(f"Bot 2 error: {e}")
 
 def run_bot_3():
     try:
-        app3 = Application.builder().token(TOKEN_BOT_3).build()
-        app3.add_handler(ChatJoinRequestHandler(handle_join_request_3))
-        app3.add_handler(CommandHandler("start", start_command_3))
-        app3.add_handler(CommandHandler("save", save_command_3))
-        app3.add_handler(CommandHandler("clear_msgs", clear_command_3))
-        app3.add_handler(CommandHandler("admin", admin_command_3))
-        app3.run_polling()
+        app = Application.builder().token(TOKEN_BOT_3).build()
+        app.add_handler(CommandHandler("start", start_command))
+        app.add_handler(CommandHandler("admin", admin_command))
+        app.add_handler(CommandHandler("save", save_message_command))
+        app.add_handler(CommandHandler("clear_msgs", clear_messages_command))
+        app.add_handler(CallbackQueryHandler(admin_callback_handler))
+        app.add_handler(ChatJoinRequestHandler(handle_join_request))
+        app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_admin_broadcast))
+        app.run_polling()
     except Exception as e:
-        logging.error(f"Bot 3 failed to start: {e}")
+        logging.error(f"Bot 3 error: {e}")
 
-# ==============================================================================
-# MAIN MULTI-THREADING EXECUTION
-# ==============================================================================
 if __name__ == "__main__":
-    # Web server thread (होस्टिंग पोर्ट को चालू रखने के लिए)
-    t_web = threading.Thread(target=run_web_server, daemon=True)
-    t_web.start()
+    threading.Thread(target=run_web_server, daemon=True).start()
 
-    t1 = threading.Thread(target=run_bot_1)
-    t2 = threading.Thread(target=run_bot_2)
-    t3 = threading.Thread(target=run_bot_3)
+    threading.Thread(target=run_bot_1).start()
+    threading.Thread(target=run_bot_2).start()
+    threading.Thread(target=run_bot_3).start()
 
-    t1.start()
-    t2.start()
-    t3.start()
-
-    # मुख्य धागे को बंद होने से रोकने के लिए
     threading.Event().wait()
