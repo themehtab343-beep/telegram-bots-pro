@@ -24,7 +24,6 @@ logging.basicConfig(
 ADMIN_ID = 8796084661
 DATA_FILE = "bot3_data.json"
 BROADCAST_USERS = set()
-EDIT_STATE = set() # एडमिन के इनपुट स्टेट ट्रैक करने के लिए
 
 # Token (Bot 3)
 TOKEN_BOT_3 = "8723910838:AAGDn-3HPeDMMIpjkpuKYgD152txrt1XgTA"
@@ -59,11 +58,12 @@ def load_data():
         "auto_approve": False,
         "start_message": {
             "type": "text",
-            "text": "👋 **Welcome!**\nनीचे दिए गए कीबोर्ड बटन्स का उपयोग करें:"
+            "text": "👋 **Welcome!**\nनीचे दिए गए कीबोर्ड बटन्स का उपयोग करें:",
+            "reply_markup": None
         },
         "keyboard_buttons": [
             {"btn": "🎁 Claim Reward", "reply": "🎉 Your reward link: https://t.me/... (Yahan apna link daal le)"},
-            {"btn": "📢 Join Channel", "reply": "🔗 Join our main channel here: https://t.me/..._"},
+            {"btn": "📢 Join Channel", "reply": "🔗 Join our main channel here: https://t.me/..."},
             {"btn": "ℹ️ Help / Info", "reply": "ℹ️ Ye bot join request automate karne aur updates bhejne ke liye hai."},
             {"btn": "📞 Support", "reply": "💬 Contact Admin for support: @YourUsername"}
         ]
@@ -74,7 +74,6 @@ def load_data():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            # सुनिश्चित करें कि सभी कीज़ मौजूद हों
             for key in default_data:
                 if key not in data:
                     data[key] = default_data[key]
@@ -115,26 +114,37 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_markup = get_user_keyboard(data)
     
-    # 1. सेट किया गया /start वेलकम मैसेज भेजना
+    # 1. सेट किया गया /start वेलकम मैसेज और उसके इनलाइन बटन्स भेजना
     s_msg = data.get("start_message", {})
     try:
         m_type = s_msg.get("type", "text")
-        if m_type == "photo":
-            await context.bot.send_photo(chat_id=user_id, photo=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
-        elif m_type == "video":
-            await context.bot.send_video(chat_id=user_id, video=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
-        elif m_type == "voice":
-            await context.bot.send_voice(chat_id=user_id, voice=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
-        elif m_type == "audio":
-            await context.bot.send_audio(chat_id=user_id, audio=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
-        elif m_type == "document":
-            await context.bot.send_document(chat_id=user_id, document=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
-        else:
-            await context.bot.send_message(chat_id=user_id, text=s_msg.get("text", "Welcome!"), reply_markup=user_markup)
-    except Exception as e:
-        await context.bot.send_message(chat_id=user_id, text="👋 Welcome!", reply_markup=user_markup)
+        markup_dict = s_msg.get("reply_markup")
+        # यहाँ इनलाइन बटन्स को रिक्रिएट किया जा रहा है ताकि वे मैसेज के साथ जाएं
+        inline_markup = InlineKeyboardMarkup.de_json(markup_dict, context.bot) if markup_dict else None
 
-    # 2. सेव किए गए अन्य मैसेज भेजना
+        if m_type == "photo":
+            await context.bot.send_photo(chat_id=user_id, photo=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=inline_markup)
+        elif m_type == "video":
+            await context.bot.send_video(chat_id=user_id, video=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=inline_markup)
+        elif m_type == "voice":
+            await context.bot.send_voice(chat_id=user_id, voice=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=inline_markup)
+        elif m_type == "audio":
+            await context.bot.send_audio(chat_id=user_id, audio=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=inline_markup)
+        elif m_type == "document":
+            await context.bot.send_document(chat_id=user_id, document=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=inline_markup)
+        else:
+            await context.bot.send_message(chat_id=user_id, text=s_msg.get("text", "Welcome!"), reply_markup=inline_markup)
+    except Exception as e:
+        logging.error(f"Error sending start message: {e}")
+
+    # 2. यूजर के नीचे वाले Reply Keyboard बटन्स भेजने के लिए एक अलग से मैसेज
+    await context.bot.send_message(
+        chat_id=user_id,
+        text="👇 नीचे दिए गए बटन्स का उपयोग करें:",
+        reply_markup=user_markup
+    )
+
+    # 3. अन्य सेव किए गए मैसेज भेजना
     saved_msgs = data.get("saved_messages", [])
     for item in saved_msgs:
         try:
@@ -164,22 +174,19 @@ async def handle_user_keyboard_clicks(update: Update, context: ContextTypes.DEFA
     user_id = update.effective_user.id
     if user_id == ADMIN_ID:
         if ADMIN_ID in BROADCAST_USERS:
-            return # ब्रॉडकास्ट मोड चालू है
-        if ADMIN_ID in EDIT_STATE:
-            return # एडमिन कुछ एडिट कर रहा है
+            return 
 
     text = update.message.text
     data = load_data()
     user_markup = get_user_keyboard(data)
 
-    # चेक करें कि क्या क्लिक किया गया बटन डेटाबेस में है
     for item in data.get("keyboard_buttons", []):
         if text == item["btn"]:
             await update.message.reply_text(item["reply"], reply_markup=user_markup)
             return
 
 # ==============================================================================
-# ADMIN PANEL (Colorful Inline Buttons & Full Management)
+# ADMIN PANEL
 # ==============================================================================
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -233,7 +240,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     elif action == "btn_set_start":
         await query.answer()
-        await query.message.reply_text("💡 **Welcome Message सेट करने का तरीका:**\nजो मैसेज (फोटो, वीडियो, वॉइस या टेक्स्ट) आप `/start` पर रखना चाहते हैं, उस पर Reply करके `/setstart` लिखें।")
+        await query.message.reply_text("💡 **Welcome Message सेट करने का तरीका:**\nजो मैसेज (बटन वाले, फोटो, वीडियो, वॉइस या टेक्स्ट) आप `/start` पर रखना चाहते हैं, उस पर Reply करके `/setstart` लिखें।")
 
     elif action == "btn_edit_kb":
         await query.answer()
@@ -295,7 +302,7 @@ async def set_start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply = update.message.reply_to_message
     if not reply:
-        await update.message.reply_text("❌ किसी मैसेज (फोटो, वीडियो, वॉइस या टेक्स्ट) पर Reply करके `/setstart` लिखें।")
+        await update.message.reply_text("❌ किसी मैसेज (इनलाइन बटन वाले, फोटो, वीडियो, वॉइस या टेक्स्ट) पर Reply करके `/setstart` लिखें।")
         return
 
     data = load_data()
@@ -320,14 +327,13 @@ async def set_start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data["start_message"] = start_data
     save_data(data)
-    await update.message.reply_text("✅ **New /start Welcome Message Set Successfully!**")
+    await update.message.reply_text("✅ **New /start Welcome Message (with Inline Buttons) Set Successfully!**")
 
 async def edit_keyboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
     text = update.message.text
-    # कमांड हटाकर बाकी हिस्सा लें
     try:
         parts = text.replace("/editkb", "").split("|")
         if len(parts) < 3:
@@ -349,16 +355,13 @@ async def edit_keyboard_command(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         await update.message.reply_text(f"❌ एरर: कृपया सही फॉर्मेट का उपयोग करें।\n`/editkb 1 | बटन नाम | रिप्लाई मैसेज`")
 
-# ==============================================================================
-# SAVE MESSAGE COMMAND (Voice, Audio, Photo, Video, Text सब सेव करेगा)
-# ==============================================================================
 async def save_message_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
     reply = update.message.reply_to_message
     if not reply:
-        await update.message.reply_text("❌ किसी भी मैसेज (वॉयस/टेक्स्ट/फोटो) पर Reply करके `/save` लिखें।")
+        await update.message.reply_text("❌ किसी भी मैसेज पर Reply करके `/save` लिखें।")
         return
 
     data = load_data()
@@ -420,26 +423,36 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         user_markup = get_user_keyboard(data)
 
-        # 1. /start वेलकम मैसेज भेजना
+        # 1. /start वेलकम मैसेज और उसके इनलाइन बटन्स भेजना
         s_msg = data.get("start_message", {})
         try:
             m_type = s_msg.get("type", "text")
-            if m_type == "photo":
-                await context.bot.send_photo(chat_id=user_id, photo=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
-            elif m_type == "video":
-                await context.bot.send_video(chat_id=user_id, video=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
-            elif m_type == "voice":
-                await context.bot.send_voice(chat_id=user_id, voice=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
-            elif m_type == "audio":
-                await context.bot.send_audio(chat_id=user_id, audio=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
-            elif m_type == "document":
-                await context.bot.send_document(chat_id=user_id, document=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=user_markup)
-            else:
-                await context.bot.send_message(chat_id=user_id, text=s_msg.get("text", "Welcome!"), reply_markup=user_markup)
-        except:
-            await context.bot.send_message(chat_id=user_id, text="👋 Welcome!", reply_markup=user_markup)
+            markup_dict = s_msg.get("reply_markup")
+            inline_markup = InlineKeyboardMarkup.de_json(markup_dict, context.bot) if markup_dict else None
 
-        # 2. सेव किए गए अन्य मैसेज भेजना
+            if m_type == "photo":
+                await context.bot.send_photo(chat_id=user_id, photo=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=inline_markup)
+            elif m_type == "video":
+                await context.bot.send_video(chat_id=user_id, video=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=inline_markup)
+            elif m_type == "voice":
+                await context.bot.send_voice(chat_id=user_id, voice=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=inline_markup)
+            elif m_type == "audio":
+                await context.bot.send_audio(chat_id=user_id, audio=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=inline_markup)
+            elif m_type == "document":
+                await context.bot.send_document(chat_id=user_id, document=s_msg.get("file_id"), caption=s_msg.get("caption", ""), reply_markup=inline_markup)
+            else:
+                await context.bot.send_message(chat_id=user_id, text=s_msg.get("text", "Welcome!"), reply_markup=inline_markup)
+        except Exception as e:
+            logging.error(f"Error sending start msg in join req: {e}")
+
+        # 2. यूजर कीबोर्ड बटन्स भेजना
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="👇 नीचे दिए गए बटन्स का उपयोग करें:",
+            reply_markup=user_markup
+        )
+
+        # 3. अन्य सेव किए गए मैसेज भेजना
         saved_msgs = data.get("saved_messages", [])
         for item in saved_msgs:
             try:
@@ -491,7 +504,7 @@ async def handle_admin_broadcast(update: Update, context: ContextTypes.DEFAULT_T
                 elif reply.video:
                     await context.bot.send_video(chat_id=uid, video=reply.video.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
                 elif reply.voice:
-                    await context.bot.send_voice(chat_id=uid, video=reply.voice.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
+                    await context.bot.send_voice(chat_id=uid, voice=reply.voice.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
                 elif reply.audio:
                     await context.bot.send_audio(chat_id=uid, audio=reply.audio.file_id, caption=reply.caption or "", reply_markup=reply.reply_markup)
                 elif reply.document:
