@@ -2,14 +2,13 @@ import os
 import json
 import logging
 import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
-    ChatJoinRequestHandler,
     ContextTypes,
-    filters
+    ChatJoinRequestHandler
 )
 
 # Logging Setup
@@ -26,8 +25,22 @@ ADMIN_ID = 8796084661
 # ==============================================================================
 TOKEN_BOT_1 = "8723910838:AAFfWtVYGMX23u1WeboqtCRdc_4oMEvz0jo"
 TOKEN_BOT_2 = "8796084661:AAGYHSa2u3dMG0aM6gQviG89Seolt1xi34c"
-# नया तीसरा बॉट (Bot 3)
 TOKEN_BOT_3 = "8950741154:AAHXRNRR8iVqIo3BB1YqMaRrih-cOvljHaY"
+
+# ==============================================================================
+# LIGHTWEIGHT WEB SERVER (Hosting Platform के लिए ताकि Exit 1 न आए)
+# ==============================================================================
+class SimpleHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bots are running 24/7 successfully!")
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
+    logging.info(f"Web server started on port {port}")
+    server.serve_forever()
 
 # ==============================================================================
 # BOT 3 DATA MANAGER (Isolated File: bot3_data.json)
@@ -51,7 +64,6 @@ def save_data_3(data):
 # BOT 3 HANDLERS
 # ==============================================================================
 
-# 1. Join Request Handler (Bot 3)
 async def handle_join_request_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
     request = update.chat_join_request
     user = request.from_user
@@ -59,12 +71,10 @@ async def handle_join_request_3(update: Update, context: ContextTypes.DEFAULT_TY
 
     data = load_data_3()
 
-    # Track User ID
     if user_id not in data["users"]:
         data["users"].append(user_id)
         save_data_3(data)
 
-    # Admin Alert
     try:
         await context.bot.send_message(
             chat_id=ADMIN_ID,
@@ -74,7 +84,6 @@ async def handle_join_request_3(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         logging.error(f"Failed to alert admin: {e}")
 
-    # Send Saved Messages
     saved_msgs = data.get("saved_messages", [])
     for idx, item in enumerate(saved_msgs):
         try:
@@ -96,7 +105,6 @@ async def handle_join_request_3(update: Update, context: ContextTypes.DEFAULT_TY
             else:
                 sent_msg = await context.bot.send_message(chat_id=user_id, text=item.get("text", ""))
 
-            # Auto-Pin Second Message (Index 1)
             if idx == 1 and sent_msg:
                 await context.bot.pin_chat_message(
                     chat_id=user_id,
@@ -106,11 +114,9 @@ async def handle_join_request_3(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception as e:
             logging.error(f"Error sending message to {user_id}: {e}")
 
-# 2. Start Command (Bot 3)
 async def start_command_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🟢 <b>[Bot 3] Active & Ready 24/7!</b>\n\nAdmin Control: /admin", parse_mode="HTML")
 
-# 3. Save Message Command (Bot 3)
 async def save_command_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
@@ -141,7 +147,6 @@ async def save_command_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_data_3(data)
     await update.message.reply_text(f"✅ <b>Message Saved for Bot 3!</b> Total: {len(data['saved_messages'])}", parse_mode="HTML")
 
-# 4. Clear Messages Command (Bot 3)
 async def clear_command_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -150,7 +155,6 @@ async def clear_command_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_data_3(data)
     await update.message.reply_text("🗑️ All saved messages cleared for Bot 3!")
 
-# 5. Admin Panel (Bot 3)
 async def admin_command_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -168,12 +172,10 @@ async def admin_command_3(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def run_bot_1():
     app1 = Application.builder().token(TOKEN_BOT_1).build()
-    # Bot 1 Handlers (आपके पुराने Handlers यहाँ रहेंगे)
     app1.run_polling()
 
 def run_bot_2():
     app2 = Application.builder().token(TOKEN_BOT_2).build()
-    # Bot 2 Handlers (आपके पुराने Handlers यहाँ रहेंगे)
     app2.run_polling()
 
 def run_bot_3():
@@ -189,6 +191,10 @@ def run_bot_3():
 # MAIN MULTI-THREADING EXECUTION
 # ==============================================================================
 if __name__ == "__main__":
+    # Web server thread (होस्टिंग पोर्ट को चालू रखने के लिए)
+    t_web = threading.Thread(target=run_web_server, daemon=True)
+    t_web.start()
+
     t1 = threading.Thread(target=run_bot_1)
     t2 = threading.Thread(target=run_bot_2)
     t3 = threading.Thread(target=run_bot_3)
