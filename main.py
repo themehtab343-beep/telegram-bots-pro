@@ -28,7 +28,7 @@ TOKEN_BOT_2 = "8796084661:AAGYHSa2u3dMG0aM6gQviG89Seolt1xi34c"
 TOKEN_BOT_3 = "8950741154:AAHXRNRR8iVqIo3BB1YqMaRrih-cOvljHaY"
 
 # ==============================================================================
-# LIGHTWEIGHT WEB SERVER (Hosting Platform के लिए ताकि Exit 1 न आए)
+# LIGHTWEIGHT WEB SERVER (Hosting के लिए ताकि Exit 1 न आए)
 # ==============================================================================
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -75,6 +75,7 @@ async def handle_join_request_3(update: Update, context: ContextTypes.DEFAULT_TY
         data["users"].append(user_id)
         save_data_3(data)
 
+    # Admin Alert
     try:
         await context.bot.send_message(
             chat_id=ADMIN_ID,
@@ -84,6 +85,7 @@ async def handle_join_request_3(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         logging.error(f"Failed to alert admin: {e}")
 
+    # Send Saved Messages to User (बिना किसी प्रीमियम झंझट के)
     saved_msgs = data.get("saved_messages", [])
     for idx, item in enumerate(saved_msgs):
         try:
@@ -105,6 +107,7 @@ async def handle_join_request_3(update: Update, context: ContextTypes.DEFAULT_TY
             else:
                 sent_msg = await context.bot.send_message(chat_id=user_id, text=item.get("text", ""))
 
+            # Auto-Pin Second Message (Index 1)
             if idx == 1 and sent_msg:
                 await context.bot.pin_chat_message(
                     chat_id=user_id,
@@ -191,7 +194,6 @@ def run_bot_3():
 # MAIN MULTI-THREADING EXECUTION
 # ==============================================================================
 if __name__ == "__main__":
-    # Web server thread (होस्टिंग पोर्ट को चालू रखने के लिए)
     t_web = threading.Thread(target=run_web_server, daemon=True)
     t_web.start()
 
