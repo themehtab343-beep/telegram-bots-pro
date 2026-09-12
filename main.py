@@ -1,4 +1,3 @@
-Bot code:
 import os
 import json
 import logging
@@ -189,7 +188,7 @@ def run_bot_3():
 # ==============================================================================
 # MAIN MULTI-THREADING EXECUTION
 # ==============================================================================
-if name == "main":
+if __name__ == "__main__":
     t1 = threading.Thread(target=run_bot_1)
     t2 = threading.Thread(target=run_bot_2)
     t3 = threading.Thread(target=run_bot_3)
